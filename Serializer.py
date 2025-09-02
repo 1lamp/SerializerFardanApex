@@ -31,7 +31,6 @@ PRODUCT_MAP = {
 }
 GROUP_A_LATIN = {"MF", "MR", "MU"}
 
-# ---------- کمکی: ساخت فایل اگر وجود نداشت ----------
 def ensure_excel():
     if not os.path.exists(EXCEL_FILE):
         QMessageBox.critical(None, "خطا", f"فایل اکسل سفارشات یافت نشد:\n{EXCEL_FILE}")
@@ -67,7 +66,7 @@ def compute_maxes(ws):
         except:
             item_idx = 0
 
-        # تشخیص گروه میله ای: اگر متن نوع محصول MF/MR/MU باشه
+        # تشخیص گروه میله‌ای: اگر متن نوع محصول MF/MR/MU باشه
         if str(ptype).upper() in GROUP_A_LATIN:
             if item_idx > max_groupA:
                 max_groupA = item_idx
@@ -134,7 +133,7 @@ QTabBar::tab { background: transparent; padding: 8px 16px; }
 QTabWidget::pane { border: none; }
 """
 
-# ---------- Dialog افزودن/ویرایش محصول ----------
+# ---------- افزودن/ویرایش محصول ----------
 class ProductDialog(QDialog):
     def __init__(self, parent=None, preset=None):
         super().__init__(parent)
@@ -142,7 +141,6 @@ class ProductDialog(QDialog):
         self.setFixedSize(460, 220)
         self.result_data = None
 
-        # Drop shadow
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(18)
         shadow.setXOffset(0)
@@ -171,7 +169,7 @@ class ProductDialog(QDialog):
             try:
                 self.e_qty.setText(str(int(preset[2])))
             except:
-                self.e_qty.setValue("1")
+                self.e_qty.setText("1")
 
         btn_layout = QHBoxLayout()
         btn_register = QPushButton("ثبت")
@@ -189,17 +187,16 @@ class ProductDialog(QDialog):
         ptype = normalize_farsi(self.cb_type.currentText())
         code = normalize_farsi(self.e_code.text())
 
-    # ✅ تبدیل متن به عدد
         try:
             qty = int(self.e_qty.text())
             if qty <= 0:
                 raise ValueError
         except:
-            QMessageBox.critical(self, "خطا", "تعداد نامعتبر است. لطفاً عددی بزرگتر از صفر وارد کنید.")
+            QMessageBox.critical(self, "خطا", "تعداد نامعتبر است. لطفا عددی بزرگتر از صفر وارد کنید.")
             return
 
         if not ptype or not code:
-            QMessageBox.critical(self, "خطا", "هم فیلدها الزامی هستند.")
+            QMessageBox.critical(self, "خطا", "همه فیلدها الزامی هستند.")
             return
 
         self.result_data = (ptype, code, qty)
@@ -214,7 +211,6 @@ class App(QMainWindow):
         self.resize(900, 500)
         self.setStyleSheet(APP_STYLESHEET)
 
-        # Drop shadow for main window (subtle on central container)
         central = QWidget(); self.setCentralWidget(central)
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(24); shadow.setXOffset(0); shadow.setYOffset(8); shadow.setColor(QColor(0,0,0,40))
@@ -258,13 +254,12 @@ class App(QMainWindow):
 
     # ---------- Tab جدید ----------
     def build_tab_new(self):
-        # لایه افقی: چپ فرم و جدول (3 سهم) | راست پنل سریال‌ها (1 سهم)
+        # لایه افقی: چپ جدول | راست پنل سریال‌ها
         main_hbox = QHBoxLayout(); self.tab_new.setLayout(main_hbox)
         left_layout = QVBoxLayout(); right_layout = QVBoxLayout()
         main_hbox.addLayout(left_layout, 3)
         main_hbox.addLayout(right_layout, 1)
 
-        # بالای فرم
         top_layout = QHBoxLayout()
         lbl_order = QLabel("شماره سفارش "); top_layout.addWidget(lbl_order, 0, Qt.AlignRight)
         self.new_order_no = QLineEdit(); self.new_order_no.setAlignment(Qt.AlignRight); self.new_order_no.setFixedWidth(220)
@@ -273,7 +268,6 @@ class App(QMainWindow):
         lbl_date = QLabel("تاریخ "); top_layout.addWidget(lbl_date, 0, Qt.AlignRight)
         self.new_date = QLineEdit(); self.new_date.setAlignment(Qt.AlignRight); self.new_date.setFixedWidth(160)
         top_layout.addWidget(self.new_date)
-        # اضافه‌شدن دکمه ثبت سفارش جدید بالای فرم همان‌جا که خواسته بودی
         btn_new_top = QPushButton("ثبت سفارش جدید")
         btn_new_top.setObjectName("secondary")
         btn_new_top.clicked.connect(self.reset_new_order_form)
@@ -298,7 +292,7 @@ class App(QMainWindow):
         self.table_new.verticalHeader().setVisible(False)
         left_layout.addWidget(self.table_new)
 
-        # دکمه‌ها (افزودن/ویرایش/حذف/ذخیره)
+        # دکمه‌ها
         btn_layout = QHBoxLayout()
         btn_add = QPushButton("افزودن محصول")
         btn_edit = QPushButton("ویرایش محصول")
@@ -315,8 +309,8 @@ class App(QMainWindow):
         btn_layout.addWidget(btn_save)
         left_layout.addLayout(btn_layout)
 
-        # ----- پنل سریال‌ها (چپ به راست) -----
-        right_layout.addWidget(QLabel("سریال‌های ساخته‌ شده برای این سفارش:"))
+        # ----- پنل سریال‌ها -----
+        right_layout.addWidget(QLabel("سریال‌های این سفارش:"))
         self.serial_box = QTextEdit()
         self.serial_box.setReadOnly(True)
         self.serial_box.setWordWrapMode(QTextOption.NoWrap)
@@ -355,7 +349,7 @@ class App(QMainWindow):
         self.search_desc = QLineEdit(); self.search_desc.setAlignment(Qt.AlignRight); desc_layout.addWidget(self.search_desc)
         left_layout.addLayout(desc_layout)
 
-    # جدول محصولات (فقط 3 ستون: نوع، کد، تعداد)
+    # جدول محصولات
         self.table_search = QTableWidget(0, 3)
         self.table_search.setHorizontalHeaderLabels(["نوع محصول", "کد محصول", "تعداد"])
         hdr2 = self.table_search.horizontalHeader()
@@ -445,7 +439,7 @@ class App(QMainWindow):
         for idx in sorted([r.row() for r in indexes], reverse=True):
             table.removeRow(idx)
 
-    # ---------- ذخیره سفارش جدید (حفظ الگوریتم + نوشتن سریال‌ها در پنل) ----------
+    # ---------- ذخیره سفارش جدید ----------
     def save_order_new(self):
         ensure_excel()
         date_text = normalize_farsi(self.new_date.text())
@@ -503,11 +497,11 @@ class App(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "خطا", f"خطا در ذخیره‌سازی: {e}")
 
-    # ---------- دکمه ثبت سفارش جدید: پاکسازی فرم و پنل سریال ----------
+# ---------- دکمه ثبت سفارش جدید: پاکسازی فرم و پنل سریال ----------
     def reset_new_order_form(self):
         self.new_order_no.clear()
         self.new_desc.clear()
-        self.new_date.setText()
+        self.new_date.clear()
         self.table_new.setRowCount(0)
         self.serial_box.clear()
 
@@ -573,26 +567,27 @@ class App(QMainWindow):
             wb = load_workbook(EXCEL_FILE)
             ws = wb[SHEET_NAME]
         except PermissionError:
-            QMessageBox.critical(self, "خطا", f"فایل {EXCEL_FILE} باز است. لطفاً ببندید و دوباره تلاش کنید.")
+            QMessageBox.critical(self, "خطا", f"فایل {EXCEL_FILE} باز است. لطفا ببندید و دوباره تلاش کنید.")
             return
 
-        # حذف ردیف‌های قبلی این سفارش
+    # حذف ردیف‌های قبلی این سفارش
         delete_order_rows(ws, order_no)
-        # محاسب maxها دوباره
+    # محاسب دوباره بیشترین ردیف آیتم و ردیف
         maxA, maxB, max_rowid = compute_maxes(ws)
 
+        serial_lines = []
         for ptype, code, qty in items:
             item_idx, serial, maxA, maxB = next_item_and_serial(ws, date_text, ptype, maxA, maxB)
             max_rowid += 1
             ws.append([max_rowid, date_text, order_no, ptype, code, qty, item_idx, serial, desc])
+            serial_lines.append('\u200E' + serial)
 
         try:
             wb.save(EXCEL_FILE)
             QMessageBox.information(self, "موفق", "تغییرات با موفقیت ذخیره شد.")
-            self.table_search.setRowCount(0)
-            self.serial_box_search.clear()
+            self.serial_box_search.setPlainText("\n".join(serial_lines))
         except PermissionError:
-            QMessageBox.critical(self, "خطا", f"فایل {EXCEL_FILE} باز است. لطفاً آن را ببندید.")
+            QMessageBox.critical(self, "خطا", f"فایل {EXCEL_FILE} باز است. لطفا آن را ببندید.")
         except Exception as e:
             QMessageBox.critical(self, "خطا", f"خطا در ذخیره‌سازی: {e}")
 
