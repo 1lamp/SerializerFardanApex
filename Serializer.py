@@ -16,7 +16,6 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QGraphicsDropShadowEffect
 from openpyxl import load_workbook
 import os, re, sys
-from datetime import datetime
 
 # ---------- تنظیمات ----------
 EXCEL_FILE = r"D:\MyWork\G.G.Fardan\order.xlsx"  # مسیر را طبق نیازِ خود تغییر بده
@@ -200,7 +199,7 @@ class ProductDialog(QDialog):
             return
 
         if not ptype or not code:
-            QMessageBox.critical(self, "خطا", "همهٔ فیلدها الزامی هستند.")
+            QMessageBox.critical(self, "خطا", "هم فیلدها الزامی هستند.")
             return
 
         self.result_data = (ptype, code, qty)
@@ -224,6 +223,30 @@ class App(QMainWindow):
         main_layout = QVBoxLayout(central)
 
         self.tabs = QTabWidget(); self.tabs.setDocumentMode(True); self.tabs.setTabPosition(QTabWidget.North)
+        # وضعیت نمایشی تب انتخاب شده
+        self.tabs.setStyleSheet("""
+        QTabBar::tab {
+            background: #f1f5f9;
+            padding: 7px 14px;
+            border: none;
+            margin-right: 0px;
+            font-size: 12px;
+            color: #6b7280;
+        }
+        QTabBar::tab:selected {
+            background: #ffffff;
+            color: #111827;
+            font-weight: bold;
+            border-bottom: 3px solid #2563eb;
+        }
+        QTabBar::tab:!selected {
+            background: #e5e7eb;
+        }
+        QTabWidget::pane {
+            border-top: 2px solid #d1d5db;
+            background: #ffffff;
+        }
+        """)
         main_layout.addWidget(self.tabs)
 
         self.tab_new = QWidget(); self.tab_search = QWidget()
@@ -302,6 +325,11 @@ class App(QMainWindow):
         # set monospace font for alignment
         self.serial_box.setFont(QFont("Consolas", 10))
         right_layout.addWidget(self.serial_box)
+        btn_copy = QPushButton("کپی سریال‌ها")
+        btn_copy.setFixedWidth(130)
+        btn_copy.clicked.connect(self.copy_serials)
+        right_layout.addWidget(btn_copy)
+        right_layout.addStretch()
 
     # ---------- Tab جستجو ----------
     def build_tab_search(self):
@@ -475,11 +503,11 @@ class App(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "خطا", f"خطا در ذخیره‌سازی: {e}")
 
-    # ---------- دکمهٔ ثبت سفارش جدید: پاکسازی فرم و پنل سریال ----------
+    # ---------- دکمه ثبت سفارش جدید: پاکسازی فرم و پنل سریال ----------
     def reset_new_order_form(self):
         self.new_order_no.clear()
         self.new_desc.clear()
-        self.new_date.setText(datetime.today().strftime("%Y/%m/%d"))
+        self.new_date.setText()
         self.table_new.setRowCount(0)
         self.serial_box.clear()
 
@@ -517,7 +545,7 @@ class App(QMainWindow):
             serial_lines.append('\u200E' + serial)
         self.serial_box_search.setPlainText("\n".join(serial_lines))
 
-    # ---------- ذخیرهٔ تغییرات در تب جستجو (حفظ قواعد محاسبات) ----------
+    # ---------- ذخیر تغییرات در تب جستجو (حفظ قواعد محاسبات) ----------
     def save_changes_search(self):
         ensure_excel()
         order_no = normalize_farsi(self.search_order_no.text())
@@ -550,7 +578,7 @@ class App(QMainWindow):
 
         # حذف ردیف‌های قبلی این سفارش
         delete_order_rows(ws, order_no)
-        # محاسبهٔ maxها دوباره
+        # محاسب maxها دوباره
         maxA, maxB, max_rowid = compute_maxes(ws)
 
         for ptype, code, qty in items:
@@ -568,7 +596,16 @@ class App(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "خطا", f"خطا در ذخیره‌سازی: {e}")
 
-    # ---------- ذخیرهٔ کپی کردن سریال ----------
+    # ---------- ذخیر کپی کردن سریال ----------
+    def copy_serials(self):
+            text = self.serial_box.toPlainText()
+            if not text.strip():
+                QMessageBox.information(self, "هشدار", "هیچ سریالی برای کپی وجود ندارد.")
+                return
+            QApplication.clipboard().setText(text)
+            QMessageBox.information(self, "کپی شد", "سریال‌ها به کلیپ‌بورد کپی شدند.")
+
+    # ---------- ذخیر کپی کردن سریال ----------
     def copy_serials_search(self):
             text = self.serial_box_search.toPlainText()
             if not text.strip():
@@ -576,7 +613,6 @@ class App(QMainWindow):
                 return
             QApplication.clipboard().setText(text)
             QMessageBox.information(self, "کپی شد", "سریال‌ها به کلیپ‌بورد کپی شدند.")
-
 
 # ---------- اجرای برنامه ----------
 if __name__ == "__main__":
