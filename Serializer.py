@@ -687,7 +687,7 @@ class App(QMainWindow):
         QApplication.processEvents()
 
         try:
-            self.save_changes_search()
+            self.save_changes_search()  # اجرای تابع اصلی
         finally:
             progress.close()
 
