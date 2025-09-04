@@ -5,9 +5,11 @@ Author: Behnam Rabieyan
 Company: Garma Gostar Fardan
 """
 
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout, \
-    QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QComboBox, QMessageBox, QDialog, \
-    QFormLayout, QHeaderView, QSizePolicy, QTextEdit, QProgressDialog, QGraphicsDropShadowEffect
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout, QFileDialog,
+    QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QComboBox, QMessageBox, QDialog,
+    QFormLayout, QHeaderView, QSizePolicy, QTextEdit, QProgressDialog, QGraphicsDropShadowEffect, QGroupBox
+)
 from PyQt5.QtGui import QFont, QIcon, QColor, QTextOption, QFontDatabase, QIntValidator
 from PyQt5.QtCore import Qt, pyqtSignal
 from openpyxl import load_workbook
@@ -15,7 +17,7 @@ from openpyxl.utils import get_column_letter
 import os, re, sys
 
 # ---------- تنظیمات ----------
-EXCEL_FILE = r"D:\MyWork\G.G.Fardan\order.xlsm"
+EXCEL_FILE = r"D:\MyWork\G.G.Fardan\order.xlsx"
 SHEET_NAME = "order"
 HEADERS = ["ردیف", "تاریخ", "شماره سفارش", "نوع محصول", "کد محصول",
            "تعداد", "ردیف آیتم", "سریال سفارش", "توضیحات"]
@@ -26,7 +28,7 @@ PRODUCT_MAP = {
     "هیتر سیمی": "س", "لوله ای دیفراست": "د", "لوله‌ای دیفراست": "د",
     "ترموفیوز": "TF"
 }
-GROUP_A_LATIN = {"MF", "MR", "MU"}
+GROUP_M = {"MF", "MR", "MU"}
 
     # ---------- بررسی محدوده جدول در اکسل ----------
 def update_excel_table_range(ws, table_name):
@@ -83,7 +85,7 @@ def compute_maxes(ws):
             item_idx = 0
 
         # تشخیص گروه میله‌ای: اگر متن نوع محصول MF/MR/MU باشه
-        if str(ptype).upper() in GROUP_A_LATIN:
+        if str(ptype).upper() in GROUP_M:
             if item_idx > max_groupA:
                 max_groupA = item_idx
         else:
@@ -100,7 +102,7 @@ def next_item_and_serial(ws, date_text, product_type, max_groupA, max_groupB):
         key = p.upper()
     abbrev = PRODUCT_MAP.get(key, PRODUCT_MAP.get(key.lower(), None))
     if not abbrev:
-        if key.upper() in GROUP_A_LATIN:
+        if key.upper() in GROUP_M:
             abbrev = key.upper()[0]
         else:
             abbrev = "0"
@@ -113,7 +115,7 @@ def next_item_and_serial(ws, date_text, product_type, max_groupA, max_groupB):
         else:
             yyyy = date_text[:4] if len(date_text) >= 4 else "0000"
 
-    in_groupA = (str(key).upper() in GROUP_A_LATIN)
+    in_groupA = (str(key).upper() in GROUP_M)
 
     if in_groupA:
         max_groupA += 1
@@ -280,14 +282,16 @@ class App(QMainWindow):
         """)
         main_layout.addWidget(self.tabs)
 
-        self.tab_new = QWidget(); self.tab_search = QWidget()
+        self.tab_new = QWidget(); self.tab_search = QWidget(); self.tab_option = QWidget()
         self.tabs.addTab(self.tab_new, "ثبت سفارش جدید")
         self.tabs.addTab(self.tab_search, "جستجو و ویرایش")
+        self.tabs.addTab(self.tab_option, "ویژگی‌ها")
 
         self.build_tab_new()
         self.build_tab_search()
+        self.build_tab_option()
 
-    # ---------- Tab جدید ----------
+    # ---------- پنجره سفارش جدید ----------
     def build_tab_new(self):
         # لایه افقی: چپ فرم و جدول | راست پنل سریال‌ها
         main_hbox = QHBoxLayout(); self.tab_new.setLayout(main_hbox)
@@ -361,7 +365,7 @@ class App(QMainWindow):
         right_layout.addWidget(btn_copy)
         right_layout.addStretch()
 
-    # ---------- Tab جستجو ----------
+    # ---------- پنجره جستجو ----------
     def build_tab_search(self):
         main_hbox = QHBoxLayout(); self.tab_search.setLayout(main_hbox)
         left_layout = QVBoxLayout(); right_layout = QVBoxLayout()
@@ -423,7 +427,123 @@ class App(QMainWindow):
         right_layout.addWidget(btn_copy)
         right_layout.addStretch()
 
-    # ---------- مدیریت جدول ----------
+    # ---------- پنجره آپشن ----------
+    def build_tab_option(self):
+        layout = QVBoxLayout()
+        self.tab_option.setLayout(layout)
+
+        group_settings = QGroupBox("تنظیمات")
+        group_settings.setMaximumHeight(900)
+        settings_layout = QVBoxLayout()
+        group_settings.setLayout(settings_layout)
+
+        # آدرس فایل اکسل
+        lbl_file = QLabel("     آدرس فایل اکسل")
+        lbl_file_layout = QHBoxLayout()
+        lbl_file_layout.addStretch()
+        lbl_file_layout.addWidget(lbl_file)
+
+        self.e_excel_path = QLineEdit(self)
+        self.e_excel_path.setText(EXCEL_FILE)
+
+        btn_browse = QPushButton("انتخاب فایل")
+        btn_browse.clicked.connect(self.browse_excel_file)
+
+        row1 = QVBoxLayout()
+        row1.addLayout(lbl_file_layout)
+
+        file_row = QHBoxLayout()
+        file_row.addWidget(btn_browse)
+        file_row.addWidget(self.e_excel_path)
+        row1.addLayout(file_row)
+
+        settings_layout.addLayout(row1)
+
+        # فاصله بین بخش‌ها
+        settings_layout.addSpacing(20)
+
+        # نام برگه
+        lbl_sheet = QLabel("    نام برگه")
+        sheet_label_layout = QHBoxLayout()
+        sheet_label_layout.addStretch()
+        sheet_label_layout.addWidget(lbl_sheet)
+
+        self.e_sheet_name = QLineEdit(self)
+        self.e_sheet_name.setText(SHEET_NAME)
+
+        sheet_layout = QVBoxLayout()
+        sheet_layout.addLayout(sheet_label_layout)
+        sheet_layout.addWidget(self.e_sheet_name)
+
+        # نام جدول
+        lbl_table = QLabel("    نام جدول")
+        table_label_layout = QHBoxLayout()
+        table_label_layout.addStretch()
+        table_label_layout.addWidget(lbl_table)
+
+        self.e_table_name = QLineEdit(self)
+        self.e_table_name.setText("ordertable")
+
+        table_layout = QVBoxLayout()
+        table_layout.addLayout(table_label_layout)
+        table_layout.addWidget(self.e_table_name)
+
+        # ترکیب دو بخش در یک ردیف
+        row2 = QHBoxLayout()
+        row2.addLayout(sheet_layout)
+        row2.addSpacing(20)
+        row2.addLayout(table_layout)
+
+        settings_layout.addLayout(row2)
+
+        # دکمه ذخیره
+        btn_layout = QHBoxLayout()
+        btn_save = QPushButton("ذخیره")
+        btn_save.clicked.connect(self.save_options)
+        btn_layout.addStretch()
+        btn_layout.addWidget(btn_save)
+        settings_layout.addLayout(btn_layout)
+
+        layout.addWidget(group_settings, alignment=Qt.AlignTop)
+
+        # دکمه درباره برنامه
+        btn_about_layout = QHBoxLayout()
+        btn_about = QPushButton("درباره برنامه")
+        btn_about.clicked.connect(self.show_about)
+        btn_about_layout.addWidget(btn_about, alignment=Qt.AlignLeft)
+        layout.addLayout(btn_about_layout)
+
+    # تابع انتخاب فایل
+    def browse_excel_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "انتخاب فایل اکسل",
+            "",
+            "Excel Files (*.xlsx)"
+        )
+        if file_path:
+            self.e_excel_path.setText(file_path)
+
+
+    # ---------- درباره برنامه ----------
+    def show_about(self):
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Fardan Apex --- Serializer")
+        msg.setIcon(QMessageBox.Information)
+        msg.setText("Fardan Apex — Serializer\n\n"
+                    "Serial Generator\n\n"
+                    "This application is designed to generate production series after order confirmation by the engineering unit. All calculations and data entries are handled automatically and saved to the designated Excel file.\n\n"
+                    "Developed exclusively for:\n"
+                    "Garma Gostar Fardan Co.\n\n"
+                    "Version: 2.1.7\n"
+                    "© 2025 All Rights Reserved\n\n"
+                    "Design & Development: Behnam Rabieyan\n"
+                    "Email: behnamrabieyan@live.com\n"
+                    "Web: behnamrabieyan.ir\n")
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec_()
+
+    # ---------- مدیریت آیتم‌های محصول ----------
     def add_product_new(self):
         dlg = ProductDialog(self)
 
@@ -535,7 +655,7 @@ class App(QMainWindow):
             serial_lines.append('\u200E' + serial)
 
     # آپدیت محدوده جدول
-        update_excel_table_range(ws, 'ordertable')
+        update_excel_table_range(ws, getattr(self, "table_name", "ordertable"))
 
         try:
             wb.save(EXCEL_FILE)
@@ -708,7 +828,7 @@ class App(QMainWindow):
                 serial_lines.append('\u200E' + serial)
 
     # آپدیت محدوده جدول
-        update_excel_table_range(ws, 'ordertable')
+        update_excel_table_range(ws, getattr(self, "table_name", "ordertable"))
 
         try:
             wb.save(EXCEL_FILE)
@@ -750,6 +870,14 @@ class App(QMainWindow):
                 return
             QApplication.clipboard().setText(text)
             QMessageBox.information(self, "کپی شد", "سریال‌ها به کلیپ‌بورد کپی شدند.")
+
+    # ---------- ذخیر تنظیمات ----------
+    def save_options(self):
+        global EXCEL_FILE, SHEET_NAME
+        EXCEL_FILE = self.e_excel_path.text().strip()
+        SHEET_NAME = self.e_sheet_name.text().strip()
+        self.table_name = self.e_table_name.text().strip() or "ordertable"
+        QMessageBox.information(self, "ذخیره شد", "تنظیمات با موفقیت ذخیره شد.")
 
 # ---------- اجرای برنامه ----------
 if __name__ == "__main__":
