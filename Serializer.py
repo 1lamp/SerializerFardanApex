@@ -7,16 +7,15 @@ Company: Garma Gostar Fardan
 
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout, \
     QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QComboBox, QMessageBox, QDialog, \
-    QFormLayout, QHeaderView, QSizePolicy, QTextEdit, QProgressDialog
-
+    QFormLayout, QHeaderView, QSizePolicy, QTextEdit, QProgressDialog, QGraphicsDropShadowEffect
 from PyQt5.QtGui import QFont, QIcon, QColor, QTextOption, QFontDatabase, QIntValidator
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QGraphicsDropShadowEffect
+from PyQt5.QtCore import Qt, pyqtSignal
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 import os, re, sys
 
 # ---------- تنظیمات ----------
-EXCEL_FILE = r"D:\MyWork\G.G.Fardan\order.xlsx"
+EXCEL_FILE = r"D:\MyWork\G.G.Fardan\order.xlsm"
 SHEET_NAME = "order"
 HEADERS = ["ردیف", "تاریخ", "شماره سفارش", "نوع محصول", "کد محصول",
            "تعداد", "ردیف آیتم", "سریال سفارش", "توضیحات"]
@@ -28,6 +27,24 @@ PRODUCT_MAP = {
     "ترموفیوز": "TF"
 }
 GROUP_A_LATIN = {"MF", "MR", "MU"}
+
+    # ---------- بررسی محدوده جدول در اکسل ----------
+def update_excel_table_range(ws, table_name):
+    """
+    به‌روزرسانی محدوده جدول اکسل بعد از اضافه کردن داده جدید
+    ws: شیء Worksheet
+    table_name: نام جدول در اکسل
+    """
+    try:
+        table = ws.tables[table_name]
+        start_cell, end_cell = table.ref.split(':')
+        min_col = ws[start_cell].col_idx
+        min_row = ws[start_cell].row
+        max_col = ws[end_cell].col_idx
+        max_row = ws.max_row
+        table.ref = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{max_row}"
+    except KeyError:
+        QMessageBox.warning(None, "هشدار", f"جدول '{table_name}' پیدا نشد. داده‌ها ذخیره شدند ولی جدول آپدیت نشد.")
 
 # ---------- بررسی فایل سفارش ----------
 def ensure_excel():
@@ -134,11 +151,12 @@ QTabWidget::pane { border: none; }
 
 # ---------- Dialog افزودن/ویرایش محصول ----------
 class ProductDialog(QDialog):
+    product_added = pyqtSignal(tuple)  # (ptype, code, qty)
+
     def __init__(self, parent=None, preset=None):
         super().__init__(parent)
         self.setWindowTitle("افزودن/ویرایش محصول")
         self.setFixedSize(460, 220)
-        self.result_data = None
 
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(18)
@@ -147,19 +165,26 @@ class ProductDialog(QDialog):
         shadow.setColor(QColor(0, 0, 0, 60))
         self.setGraphicsEffect(shadow)
 
-        font = QFont(); font.setPointSize(10); self.setFont(font)
-        form = QFormLayout(); form.setLabelAlignment(Qt.AlignRight); self.setLayout(form)
+        font = QFont()
+        font.setPointSize(10)
+        self.setFont(font)
 
-        self.cb_type = QComboBox();
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignRight)
+        self.setLayout(form)
+
+        self.cb_type = QComboBox()
         self.cb_type.addItems(['', 'فویلی', 'هیتر سیمی', 'نفراست', 'لوله ای دیفراست', 'ترموفیوز', 'ترموسوییچ', 'MF', 'MR', 'MU'])
         self.cb_type.setEditable(True)
         self.cb_type.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         form.addRow("نوع محصول ", self.cb_type)
 
-        self.e_code = QLineEdit(); self.e_code.setAlignment(Qt.AlignRight)
+        self.e_code = QLineEdit()
+        self.e_code.setAlignment(Qt.AlignRight)
         form.addRow("کد محصول ", self.e_code)
 
-        self.e_qty = QLineEdit(); self.e_qty.setValidator(QIntValidator(1, 1000000, self))
+        self.e_qty = QLineEdit()
+        self.e_qty.setValidator(QIntValidator(1, 10000000, self))
         form.addRow("تعداد ", self.e_qty)
 
         if preset:
@@ -168,7 +193,9 @@ class ProductDialog(QDialog):
             try:
                 self.e_qty.setText(str(int(preset[2])))
             except:
-                self.e_qty.setValue("1")
+                self.e_qty.setText("1")
+        else:
+            self.e_qty.setText("1")
 
         btn_layout = QHBoxLayout()
         btn_register = QPushButton("ثبت")
@@ -176,7 +203,9 @@ class ProductDialog(QDialog):
         btn_close = QPushButton("بستن")
         btn_close.setObjectName("secondary")
         btn_close.setFixedWidth(120)
-        btn_layout.addStretch(); btn_layout.addWidget(btn_register); btn_layout.addWidget(btn_close)
+        btn_layout.addStretch()
+        btn_layout.addWidget(btn_register)
+        btn_layout.addWidget(btn_close)
         form.addRow(btn_layout)
 
         btn_register.clicked.connect(self.on_register)
@@ -186,7 +215,6 @@ class ProductDialog(QDialog):
         ptype = normalize_farsi(self.cb_type.currentText())
         code = normalize_farsi(self.e_code.text())
 
-    # تبدیل متن به عدد
         try:
             qty = int(self.e_qty.text())
             if qty <= 0:
@@ -196,11 +224,17 @@ class ProductDialog(QDialog):
             return
 
         if not ptype or not code:
-            QMessageBox.critical(self, "خطا", "هم فیلدها الزامی هستند.")
+            QMessageBox.critical(self, "خطا", "همه فیلدها الزامی هستند.")
             return
 
-        self.result_data = (ptype, code, qty)
-        self.accept()
+        # ارسال داده به بیرون بدون بستن دیالوگ
+        self.product_added.emit((ptype, code, qty))
+
+        # ریست کردن فیلدها
+        self.cb_type.setCurrentIndex(0)
+        self.e_code.clear()
+        self.e_qty.setText("1")
+        self.cb_type.setFocus()
 
 # ---------- کلاس اصلی ----------
 class App(QMainWindow):
@@ -392,49 +426,61 @@ class App(QMainWindow):
     # ---------- مدیریت جدول ----------
     def add_product_new(self):
         dlg = ProductDialog(self)
-        if dlg.exec_():
-            data = dlg.result_data
-            if data:
-                row = self.table_new.rowCount()
-                self.table_new.insertRow(row)
-                self.table_new.setItem(row, 0, QTableWidgetItem(str(data[0])))
-                self.table_new.setItem(row, 1, QTableWidgetItem(str(data[1])))
-                self.table_new.setItem(row, 2, QTableWidgetItem(str(data[2])))
+
+        def add_row(data):
+            row = self.table_new.rowCount()
+            self.table_new.insertRow(row)
+            self.table_new.setItem(row, 0, QTableWidgetItem(str(data[0])))
+            self.table_new.setItem(row, 1, QTableWidgetItem(str(data[1])))
+            self.table_new.setItem(row, 2, QTableWidgetItem(str(data[2])))
+
+        dlg.product_added.connect(add_row)
+        dlg.exec_()  # مودال می‌ماند ولی بعد از ثبت بسته نمی‌شود
 
     def edit_product_new(self):
         row = self.table_new.currentRow()
         if row == -1:
             QMessageBox.warning(self, "توجه", "ابتدا یک محصول را انتخاب کنید.")
             return
+
         preset = [self.table_new.item(row, i).text() if self.table_new.item(row, i) else "" for i in range(3)]
         dlg = ProductDialog(self, preset)
-        if dlg.exec_():
-            data = dlg.result_data
+
+        def update_row(data):
             for col, val in enumerate(data):
                 self.table_new.setItem(row, col, QTableWidgetItem(str(val)))
 
+        dlg.product_added.connect(update_row)
+        dlg.exec_()
+
     def add_product_search(self):
         dlg = ProductDialog(self)
-        if dlg.exec_():
-            data = dlg.result_data
-            if data:
-                row = self.table_search.rowCount()
-                self.table_search.insertRow(row)
-                self.table_search.setItem(row, 0, QTableWidgetItem(str(data[0])))
-                self.table_search.setItem(row, 1, QTableWidgetItem(str(data[1])))
-                self.table_search.setItem(row, 2, QTableWidgetItem(str(data[2])))
+
+        def add_row(data):
+            row = self.table_search.rowCount()
+            self.table_search.insertRow(row)
+            self.table_search.setItem(row, 0, QTableWidgetItem(str(data[0])))
+            self.table_search.setItem(row, 1, QTableWidgetItem(str(data[1])))
+            self.table_search.setItem(row, 2, QTableWidgetItem(str(data[2])))
+
+        dlg.product_added.connect(add_row)
+        dlg.exec_()
 
     def edit_product_search(self):
         row = self.table_search.currentRow()
         if row == -1:
             QMessageBox.warning(self, "توجه", "ابتدا یک محصول را انتخاب کنید.")
             return
+
         preset = [self.table_search.item(row, i).text() if self.table_search.item(row, i) else "" for i in range(3)]
         dlg = ProductDialog(self, preset)
-        if dlg.exec_():
-            data = dlg.result_data
+
+        def update_row(data):
             for col, val in enumerate(data):
                 self.table_search.setItem(row, col, QTableWidgetItem(str(val)))
+
+        dlg.product_added.connect(update_row)
+        dlg.exec_()
 
     def delete_selected(self, table):
         indexes = table.selectionModel().selectedRows()
@@ -480,18 +526,20 @@ class App(QMainWindow):
             return
 
         maxA, maxB, max_rowid = compute_maxes(ws)
-        serial_lines = []  # جمع‌آوری سریال‌ها به ترتیب آیتم‌ها
+        serial_lines = []
+
         for ptype, code, qty in items:
             item_idx, serial, maxA, maxB = next_item_and_serial(ws, date_text, ptype, maxA, maxB)
             max_rowid += 1
             ws.append([max_rowid, date_text, order_no, ptype, code, qty, item_idx, serial, desc])
-            # اضافه کردن LRM به ابتدای متن برای ترتیب چپ به راست در متن ترکیبی از راست به چپ
             serial_lines.append('\u200E' + serial)
+
+    # آپدیت محدوده جدول
+        update_excel_table_range(ws, 'ordertable')
 
         try:
             wb.save(EXCEL_FILE)
             QMessageBox.information(self, "موفق", "سفارش با موفقیت ثبت شد. سریال‌ها در پنل سمت راست درج شدند.")
-            # نمایش سریال‌ها (هر سریال در یک خط) — جدول و فرم پاک نمی‌شوند
             self.serial_box.clear()
             self.serial_box.setPlainText("\n".join(serial_lines))
         except PermissionError:
@@ -607,9 +655,7 @@ class App(QMainWindow):
                     "desc": row[8]
                 })
 
-    # محاسبه بیشترین ردیف آیتم‌ها (برای اضافه شدن آیتم جدید)
         maxA, maxB, max_rowid = compute_maxes(ws)
-
         serial_lines = []
 
         for row_idx in range(self.table_search.rowCount()):
@@ -622,31 +668,25 @@ class App(QMainWindow):
                 return
 
             if row_idx < len(existing_rows):
-            # ردیف موجود: فقط سلول‌های تغییر کرده بروزرسانی شوند
                 row_data = existing_rows[row_idx]
                 ws_idx = row_data["ws_idx"]
 
-            # ---------- تاریخ و توضیحات ----------
                 if row_data["date"] != date_text:
                     ws.cell(row=ws_idx, column=2, value=date_text)
                 if row_data["desc"] != desc:
                     ws.cell(row=ws_idx, column=9, value=desc)
 
-            # ---------- کد محصول و تعداد ----------
                 if row_data["code"] != code_new:
                     ws.cell(row=ws_idx, column=5, value=code_new)
                 if row_data["qty"] != qty_new:
                     ws.cell(row=ws_idx, column=6, value=qty_new)
 
-            # ---------- نوع محصول ----------
                 if row_data["ptype"] != ptype_new:
                     ws.cell(row=ws_idx, column=4, value=ptype_new)
-                # بروزرسانی سریال: فقط حرف انتهایی تغییر کند
                     parts = str(row_data["serial"]).split("-")
                     if len(parts) == 3:
                         item_idx = parts[0]
                         year_part = parts[1]
-                    # پیدا کردن حرف جدید بر اساس قواعد محصول
                         key = ptype_new
                         if re.match(r"^[A-Za-z]{1,4}$", key):
                             key = key.upper()
@@ -662,11 +702,13 @@ class App(QMainWindow):
                     serial_lines.append('\u200E' + row_data["serial"])
 
             else:
-            # ---------- آیتم جدید ----------
                 max_rowid += 1
                 item_idx, serial, maxA, maxB = next_item_and_serial(ws, date_text, ptype_new, maxA, maxB)
                 ws.append([max_rowid, date_text, order_no, ptype_new, code_new, qty_new, item_idx, serial, desc])
                 serial_lines.append('\u200E' + serial)
+
+    # آپدیت محدوده جدول
+        update_excel_table_range(ws, 'ordertable')
 
         try:
             wb.save(EXCEL_FILE)
