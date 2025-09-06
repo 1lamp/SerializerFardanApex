@@ -10,15 +10,18 @@ from PyQt5.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QComboBox, QMessageBox, QDialog,
     QFormLayout, QHeaderView, QSizePolicy, QTextEdit, QProgressDialog, QGraphicsDropShadowEffect, QGroupBox
 )
-from PyQt5.QtGui import QFont, QIcon, QColor, QTextOption, QFontDatabase, QIntValidator
+from PyQt5.QtGui import QFont, QIcon, QColor, QTextOption, QFontDatabase, QIntValidator, QPixmap
 from PyQt5.QtCore import Qt, pyqtSignal
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 import os, re, sys
+import json
 
 # ---------- تنظیمات ----------
 EXCEL_FILE = r"D:\MyWork\G.G.Fardan\order.xlsx"
 SHEET_NAME = "order"
+TABLE_NAME = "ordertable"
+SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 HEADERS = ["ردیف", "تاریخ", "شماره سفارش", "نوع محصول", "کد محصول",
            "تعداد", "ردیف آیتم", "سریال سفارش", "توضیحات"]
 PRODUCT_MAP = {
@@ -49,10 +52,12 @@ def update_excel_table_range(ws, table_name):
         QMessageBox.warning(None, "هشدار", f"جدول '{table_name}' پیدا نشد. داده‌ها ذخیره شدند ولی جدول آپدیت نشد.")
 
 # ---------- بررسی فایل سفارش ----------
-def ensure_excel():
+def ensure_excel(show_message=True):
     if not os.path.exists(EXCEL_FILE):
-        QMessageBox.critical(None, "خطا", f"فایل اکسل سفارشات یافت نشد:\n{EXCEL_FILE}")
-        raise FileNotFoundError(f"Excel file not found: {EXCEL_FILE}")
+        if show_message:
+            QMessageBox.warning(None, "هشدار", f"فایل اکسل یافت نشد:\n{EXCEL_FILE}\nلطفاً مسیر درست را در تنظیمات وارد کنید.")
+        return False
+    return True
 
 # ---------- نرمال‌سازی حروف فارسی (عربی -> فارسی و trim) ----------
 def normalize_farsi(s):
@@ -64,6 +69,28 @@ def normalize_farsi(s):
         s = s.replace(a, b)
     s = re.sub(r"\s+", " ", s).strip()
     return s
+
+# ---------- بارگذاری تنظیمات از settings.json ----------
+def load_settings():
+    try:
+        if os.path.exists(SETTINGS_FILE):
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+    except Exception as e:
+        print("Failed to load settings:", e)
+    return {}
+
+# ---------- ذخیره دیکشنری در settings.json ----------
+def save_settings(data: dict):
+    try:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print("Failed to save settings:", e)
+        return False
 
 # ---------- پیدا کردن بیشترین ها (برای ردیف آیتم و شماره ردیف) ----------
 def compute_maxes(ws):
@@ -195,9 +222,9 @@ class ProductDialog(QDialog):
             try:
                 self.e_qty.setText(str(int(preset[2])))
             except:
-                self.e_qty.setText("1")
+                self.e_qty.setText("")
         else:
-            self.e_qty.setText("1")
+            self.e_qty.setText("")
 
         btn_layout = QHBoxLayout()
         btn_register = QPushButton("ثبت")
@@ -235,14 +262,20 @@ class ProductDialog(QDialog):
         # ریست کردن فیلدها
         self.cb_type.setCurrentIndex(0)
         self.e_code.clear()
-        self.e_qty.setText("1")
+        self.e_qty.setText("")
         self.cb_type.setFocus()
 
 # ---------- کلاس اصلی ----------
 class App(QMainWindow):
     def __init__(self):
         super().__init__()
-        ensure_excel()
+        # --- load persisted settings BEFORE checking Excel file ---
+        settings = load_settings()
+        global EXCEL_FILE, SHEET_NAME, TABLE_NAME
+        EXCEL_FILE = settings.get("excel_file", EXCEL_FILE)
+        SHEET_NAME = settings.get("sheet_name", SHEET_NAME)
+        TABLE_NAME = settings.get("table_name", TABLE_NAME)
+        ensure_excel(show_message=True)
         self.setWindowTitle("تولید سریال سفارش - FardanApex")
         self.resize(900, 500)
         self.setStyleSheet(APP_STYLESHEET)
@@ -482,7 +515,7 @@ class App(QMainWindow):
         table_label_layout.addWidget(lbl_table)
 
         self.e_table_name = QLineEdit(self)
-        self.e_table_name.setText("ordertable")
+        self.e_table_name.setText(TABLE_NAME)
 
         table_layout = QVBoxLayout()
         table_layout.addLayout(table_label_layout)
@@ -524,24 +557,63 @@ class App(QMainWindow):
         if file_path:
             self.e_excel_path.setText(file_path)
 
-
     # ---------- درباره برنامه ----------
     def show_about(self):
-        msg = QMessageBox(self)
-        msg.setWindowTitle("Fardan Apex --- Serializer")
-        msg.setIcon(QMessageBox.Information)
-        msg.setText("Fardan Apex — Serializer\n\n"
-                    "Serial Generator\n\n"
-                    "This application is designed to generate production series after order confirmation by the engineering unit. All calculations and data entries are handled automatically and saved to the designated Excel file.\n\n"
-                    "Developed exclusively for:\n"
-                    "Garma Gostar Fardan Co.\n\n"
-                    "Version: 2.1.7\n"
-                    "© 2025 All Rights Reserved\n\n"
-                    "Design & Development: Behnam Rabieyan\n"
-                    "Email: behnamrabieyan@live.com\n"
-                    "Web: behnamrabieyan.ir\n")
-        msg.setStandardButtons(QMessageBox.Ok)
-        msg.exec_()
+        dlg = QDialog(self)
+        dlg.setWindowTitle("About")
+        dlg.setFixedSize(500, 400)
+    
+        main_layout = QVBoxLayout(dlg)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(15)
+    
+        intro_layout = QVBoxLayout()
+        intro_layout.setSpacing(0)
+        intro_layout.setContentsMargins(5, 0, 0, 0)
+        lbl_intro = QLabel(
+            "<h3><b>Fardan Apex — Serializer</b></h3>"
+            "<h4>Production Serial Generator Application</h4><br>"
+            "This application is designed to generate production series after order confirmation by the engineering unit.<br><br>"
+            "Version: 2.1.7 — © 2025 All Rights Reserved<br>"
+            "Developed exclusively for:<br>"
+            "Garma Gostar Fardan Co.<br><br>"
+        )
+        lbl_intro.setWordWrap(True)
+        lbl_intro.setAlignment(Qt.AlignLeft)
+        intro_layout.addWidget(lbl_intro)
+    
+        logo = QLabel()
+        logo.setPixmap(QPixmap("FardanLogo.jpg").scaled(
+            119, 119, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        logo.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        logo.setContentsMargins(30, 0, 0, 0)
+        intro_layout.addWidget(logo)
+    
+        main_layout.addLayout(intro_layout)
+    
+        dev_layout = QVBoxLayout()
+        dev_layout.setSpacing(0)
+        dev_layout.setContentsMargins(5, 0, 0, 15)
+        font_id = QFontDatabase.addApplicationFont("BrittanySignature.ttf")
+        if font_id != -1:
+            font_family = QFontDatabase.applicationFontFamilies(font_id)[0]
+        else:
+            font_family = "Sans Serif"
+            
+        lbl_dev = QLabel(
+            f"<b>Design & Development:</b><br>"
+            f"<span style='font-family:\"{font_family}\"; font-size:20pt;'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Behnam Rabieyan</span><br>"
+            "website: behnamrabieyan.ir | E-mail: info@behnamrabieyan.ir"
+        )
+        
+        lbl_dev.setWordWrap(True)
+        lbl_dev.setAlignment(Qt.AlignLeft)
+        dev_layout.addWidget(lbl_dev)
+        
+        main_layout.addLayout(dev_layout)
+    
+        dlg.exec_()
+
 
     # ---------- مدیریت آیتم‌های محصول ----------
     def add_product_new(self):
@@ -609,7 +681,8 @@ class App(QMainWindow):
 
     # ---------- ذخیره سفارش جدید ----------
     def save_order_new(self):
-        ensure_excel()
+        if not ensure_excel():
+           return
         date_text = normalize_farsi(self.new_date.text())
         order_no = normalize_farsi(self.new_order_no.text())
         desc = normalize_farsi(self.new_desc.text())
@@ -655,7 +728,7 @@ class App(QMainWindow):
             serial_lines.append('\u200E' + serial)
 
     # آپدیت محدوده جدول
-        update_excel_table_range(ws, getattr(self, "table_name", "ordertable"))
+        update_excel_table_range(ws, TABLE_NAME)
 
         try:
             wb.save(EXCEL_FILE)
@@ -745,7 +818,8 @@ class App(QMainWindow):
 
     # ---------- ذخیر تغییرات در تب جستجو ----------
     def save_changes_search(self):
-        ensure_excel()
+        if not ensure_excel():
+            return
         order_no = normalize_farsi(self.search_order_no.text())
         date_text = normalize_farsi(self.search_date.text())
         desc = normalize_farsi(self.search_desc.text())
@@ -828,7 +902,7 @@ class App(QMainWindow):
                 serial_lines.append('\u200E' + serial)
 
     # آپدیت محدوده جدول
-        update_excel_table_range(ws, getattr(self, "table_name", "ordertable"))
+        update_excel_table_range(ws, TABLE_NAME)
 
         try:
             wb.save(EXCEL_FILE)
@@ -873,11 +947,21 @@ class App(QMainWindow):
 
     # ---------- ذخیر تنظیمات ----------
     def save_options(self):
-        global EXCEL_FILE, SHEET_NAME
-        EXCEL_FILE = self.e_excel_path.text().strip()
-        SHEET_NAME = self.e_sheet_name.text().strip()
-        self.table_name = self.e_table_name.text().strip() or "ordertable"
-        QMessageBox.information(self, "ذخیره شد", "تنظیمات با موفقیت ذخیره شد.")
+        global EXCEL_FILE, SHEET_NAME, TABLE_NAME
+        EXCEL_FILE = self.e_excel_path.text().strip() or EXCEL_FILE
+        SHEET_NAME = self.e_sheet_name.text().strip() or SHEET_NAME
+        TABLE_NAME = self.e_table_name.text().strip() or TABLE_NAME
+
+        settings = {
+            "excel_file": EXCEL_FILE,
+            "sheet_name": SHEET_NAME,
+            "table_name": TABLE_NAME
+        }
+        ok = save_settings(settings)
+        if ok:
+            QMessageBox.information(self, "ذخیره شد", "تنظیمات با موفقیت ذخیره شد.")
+        else:
+            QMessageBox.warning(self, "خطا", "خطا در ذخیره تنظیمات (بررسی دسترسی نوشتن).")
 
 # ---------- اجرای برنامه ----------
 if __name__ == "__main__":
