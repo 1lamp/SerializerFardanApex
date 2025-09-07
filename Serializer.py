@@ -1,43 +1,82 @@
 """
-Fardan Apex --- Serializer
-@2025
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Fardan Apex --- Serializer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+This application is responsible for serializing order items in the Fardan Apex system.
+
 Author: Behnam Rabieyan
 Company: Garma Gostar Fardan
+Created: 2025
 """
 
-from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout, QFileDialog,
-    QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QComboBox, QMessageBox, QDialog,
-    QFormLayout, QHeaderView, QSizePolicy, QTextEdit, QProgressDialog, QGraphicsDropShadowEffect, QGroupBox
-)
-from PyQt5.QtGui import QFont, QIcon, QColor, QTextOption, QFontDatabase, QIntValidator, QPixmap
-from PyQt5.QtCore import Qt, pyqtSignal
+# Standard library imports
+import getpass
+import json
+import os
+import re
+import sys
+from datetime import datetime
+
+# Third-party library imports
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
-import os, re, sys
-import json
+
+# PyQt5 imports
+from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import (
+    QColor, QFont, QFontDatabase, QIcon, QIntValidator, QPixmap, QTextOption
+)
+from PyQt5.QtWidgets import (
+    QApplication, QComboBox, QDialog, QFileDialog, QFormLayout, QGraphicsDropShadowEffect,
+    QGroupBox, QHeaderView, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
+    QProgressDialog, QMainWindow, QSizePolicy, QTabWidget, QTableWidget, QTableWidgetItem,
+    QTextEdit, QVBoxLayout, QWidget
+)
 
 # ---------- تنظیمات ----------
 EXCEL_FILE = r"D:\MyWork\G.G.Fardan\order.xlsx"
 SHEET_NAME = "order"
 TABLE_NAME = "ordertable"
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
-HEADERS = ["ردیف", "تاریخ", "شماره سفارش", "نوع محصول", "کد محصول",
-           "تعداد", "ردیف آیتم", "سریال سفارش", "توضیحات"]
+
+HEADERS = [
+    "ردیف",
+    "تاریخ",
+    "شماره سفارش",
+    "نوع محصول",
+    "کد محصول",
+    "تعداد",
+    "ردیف آیتم",
+    "سریال سفارش",
+    "توضیحات",
+    "کاربر ثبت",
+    "تاریخ ثبت",
+]
+
 PRODUCT_MAP = {
-    "MF": "F", "MR": "R", "MU": "U",
-    "نفراست": "ن", "فویلی": "ف", "فویل": "ف",
-    "ترموسوییچ": "TS", "ترموسوئیچ": "TS",
-    "هیتر سیمی": "س", "لوله ای دیفراست": "د", "لوله‌ای دیفراست": "د",
+    "MF": "F",
+    "MR": "R",
+    "MU": "U",
+    "نفراست": "ن",
+    "فویلی": "ف",
+    "فویل": "ف",
+    "ترموسوییچ": "TS",
+    "ترموسوئیچ": "TS",
+    "هیتر سیمی": "س",
+    "لوله ای دیفراست": "د",
+    "لوله‌ای دیفراست": "د",
     "ترموفیوز": "TF"
 }
-GROUP_M = {"MF", "MR", "MU"}
+
+GROUP_M = {
+    "MF",
+    "MR",
+    "MU"
+}
 
     # ---------- بررسی محدوده جدول در اکسل ----------
 def update_excel_table_range(ws, table_name):
     """
     به‌روزرسانی محدوده جدول اکسل بعد از اضافه کردن داده جدید
-    ws: شیء Worksheet
+    ws: نام شیت در اکسل
     table_name: نام جدول در اکسل
     """
     try:
@@ -49,26 +88,37 @@ def update_excel_table_range(ws, table_name):
         max_row = ws.max_row
         table.ref = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{max_row}"
     except KeyError:
-        QMessageBox.warning(None, "هشدار", f"جدول '{table_name}' پیدا نشد. داده‌ها ذخیره شدند ولی جدول آپدیت نشد.")
+        QMessageBox.warning(
+            None, "هشدار", f"جدول '{table_name}' پیدا نشد. داده‌ها ذخیره شدند ولی جدول آپدیت نشد."
+        )
 
 # ---------- بررسی فایل سفارش ----------
 def ensure_excel(show_message=True):
     if not os.path.exists(EXCEL_FILE):
         if show_message:
-            QMessageBox.warning(None, "هشدار", f"فایل اکسل یافت نشد:\n{EXCEL_FILE}\nلطفاً مسیر درست را در تنظیمات وارد کنید.")
+            QMessageBox.warning(
+                None, "هشدار", f"فایل اکسل یافت نشد:\n{EXCEL_FILE}\nلطفاً مسیر درست را در تنظیمات وارد کنید."
+            )
         return False
+    
     return True
 
 # ---------- نرمال‌سازی حروف فارسی (عربی -> فارسی و trim) ----------
-def normalize_farsi(s):
-    if s is None:
+def normalize_farsi(text: str) -> str:
+    if not text:
         return ""
-    s = str(s)
-    mapping = {"ي": "ی", "ك": "ک", "ة": "ه", "ۀ": "ه"}
-    for a, b in mapping.items():
-        s = s.replace(a, b)
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
+    
+    replacements = {
+        "ي": "ی",
+        "ك": "ک",
+        "ة": "ه",
+        "ۀ": "ه"
+    }
+
+    for src, dst in replacements.items():
+        text = text.replace(src, dst)
+
+    return re.sub(r"\s+", " ", text).strip()
 
 # ---------- بارگذاری تنظیمات از settings.json ----------
 def load_settings():
@@ -78,8 +128,10 @@ def load_settings():
                 data = json.load(f)
                 if isinstance(data, dict):
                     return data
+                
     except Exception as e:
-        print("Failed to load settings:", e)
+        print("خطا در بارگزاری تنظیمات:", e)
+
     return {}
 
 # ---------- ذخیره دیکشنری در settings.json ----------
@@ -89,7 +141,8 @@ def save_settings(data: dict):
             json.dump(data, f, ensure_ascii=False, indent=2)
         return True
     except Exception as e:
-        print("Failed to save settings:", e)
+        print("خطا در ذخیره تنظیمات:", e)
+
         return False
 
 # ---------- پیدا کردن بیشترین ها (برای ردیف آیتم و شماره ردیف) ----------
@@ -152,30 +205,85 @@ def next_item_and_serial(ws, date_text, product_type, max_groupA, max_groupB):
         item_idx = max_groupB
 
     serial = f"{item_idx}-{yyyy}-{abbrev}"
+
     return item_idx, serial, max_groupA, max_groupB
 
 # ---------- حذف تمام ردیف‌های یک سفارش ----------
 def delete_order_rows(ws, order_no):
     to_delete = []
+
     for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         if str(row[2]) == str(order_no):
             to_delete.append(idx)
+
     for r in reversed(to_delete):
         ws.delete_rows(r, 1)
 
 # ---------- استایل ----------
 APP_STYLESHEET = """
-QWidget { background: #f5f7fb; font-family: 'Segoe UI', Tahoma, Arial; }
-QLineEdit, QTextEdit { background: white; border: 1px solid #d0d7df; border-radius: 6px; padding: 6px; }
-QTextEdit { font-family: Consolas, 'Courier New', monospace; }
-QPushButton { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #5aa9ff, stop:1 #2e7dff); color: white; border: none; padding: 8px 12px; border-radius: 8px; }
-QPushButton:hover { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #6bb8ff, stop:1 #3b8bff); }
-QPushButton#secondary { background: #eef4ff; color: #1a3b6e; border: 1px solid #d0dbff; }
-QTableWidget { background: white; border: 1px solid #e0e6ef; gridline-color: #f1f5fb; }
-QHeaderView::section { background: #eef4ff; padding: 6px; border: none; }
-QComboBox { background: white; border: 1px solid #d0d7df; border-radius: 6px; padding: 4px; }
-QTabBar::tab { background: transparent; padding: 8px 16px; }
-QTabWidget::pane { border: none; }
+QWidget {
+    background: #f5f7fb;
+    font-family: 'Segoe UI', Tahoma, Arial;
+}
+
+QLineEdit, QTextEdit {
+    background: white;
+    border: 1px solid #d0d7df;
+    border-radius: 6px;
+    padding: 6px;
+}
+
+QTextEdit {
+    font-family: Consolas, 'Courier New', monospace;
+}
+
+QPushButton {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #5aa9ff, stop:1 #2e7dff);
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 8px;
+}
+
+QPushButton:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #6bb8ff, stop:1 #3b8bff);
+}
+
+QPushButton#secondary {
+    background: #eef4ff;
+    color: #1a3b6e;
+    border: 1px solid #d0dbff;
+}
+
+QTableWidget {
+    background: white;
+    border: 1px solid #e0e6ef;
+    gridline-color: #f1f5fb;
+}
+
+QHeaderView::section {
+    background: #eef4ff;
+    padding: 6px;
+    border: none;
+}
+
+QComboBox {
+    background: white;
+    border: 1px solid #d0d7df;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+QTabBar::tab {
+    background: transparent;
+    padding: 8px 16px;
+}
+
+QTabWidget::pane {
+    border: none;
+}
 """
 
 # ---------- Dialog افزودن/ویرایش محصول ----------
@@ -562,11 +670,11 @@ class App(QMainWindow):
         dlg = QDialog(self)
         dlg.setWindowTitle("About")
         dlg.setFixedSize(500, 400)
-    
+
         main_layout = QVBoxLayout(dlg)
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(15)
-    
+
         intro_layout = QVBoxLayout()
         intro_layout.setSpacing(0)
         intro_layout.setContentsMargins(5, 0, 0, 0)
@@ -581,16 +689,16 @@ class App(QMainWindow):
         lbl_intro.setWordWrap(True)
         lbl_intro.setAlignment(Qt.AlignLeft)
         intro_layout.addWidget(lbl_intro)
-    
+
         logo = QLabel()
         logo.setPixmap(QPixmap("FardanLogo.jpg").scaled(
             119, 119, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         logo.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         logo.setContentsMargins(30, 0, 0, 0)
         intro_layout.addWidget(logo)
-    
+
         main_layout.addLayout(intro_layout)
-    
+
         dev_layout = QVBoxLayout()
         dev_layout.setSpacing(0)
         dev_layout.setContentsMargins(5, 0, 0, 15)
@@ -599,19 +707,19 @@ class App(QMainWindow):
             font_family = QFontDatabase.applicationFontFamilies(font_id)[0]
         else:
             font_family = "Sans Serif"
-            
+
         lbl_dev = QLabel(
             f"<b>Design & Development:</b><br>"
-            f"<span style='font-family:\"{font_family}\"; font-size:20pt;'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Behnam Rabieyan</span><br>"
+            f"<span style='font-family:\"{font_family}\"; font-size:20pt; color:#4169E1;'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Behnam Rabieyan</span><br>"
             "website: behnamrabieyan.ir | E-mail: info@behnamrabieyan.ir"
         )
-        
+
         lbl_dev.setWordWrap(True)
         lbl_dev.setAlignment(Qt.AlignLeft)
         dev_layout.addWidget(lbl_dev)
-        
+
         main_layout.addLayout(dev_layout)
-    
+
         dlg.exec_()
 
 
@@ -711,20 +819,37 @@ class App(QMainWindow):
         try:
             wb = load_workbook(EXCEL_FILE)
             ws = wb[SHEET_NAME]
+            username = getpass.getuser()
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         except PermissionError:
             QMessageBox.critical(self, "خطا", f"فایل {EXCEL_FILE} باز است. لطفاً آن را ببندید.")
             return
+        
         except Exception as e:
             QMessageBox.critical(self, "خطا", f"خطا در باز کردن فایل: {e}")
             return
-
+        
         maxA, maxB, max_rowid = compute_maxes(ws)
         serial_lines = []
 
         for ptype, code, qty in items:
             item_idx, serial, maxA, maxB = next_item_and_serial(ws, date_text, ptype, maxA, maxB)
             max_rowid += 1
-            ws.append([max_rowid, date_text, order_no, ptype, code, qty, item_idx, serial, desc])
+            ws.append(
+                [
+                    max_rowid,
+                    date_text,
+                    order_no,
+                    ptype,
+                    code,
+                    qty,
+                    item_idx,
+                    serial,
+                    desc,
+                    username,
+                    now_str,
+                ]
+            )
             serial_lines.append('\u200E' + serial)
 
     # آپدیت محدوده جدول
@@ -772,21 +897,26 @@ class App(QMainWindow):
     def search_order(self):
         ensure_excel()
         order_no = normalize_farsi(self.search_order_no.text())
+
         if not order_no:
             QMessageBox.critical(self, "خطا", "شماره سفارش را وارد کنید.")
             return
+
         try:
             wb = load_workbook(EXCEL_FILE)
             ws = wb[SHEET_NAME]
         except PermissionError:
             QMessageBox.critical(self, "خطا", f"فایل {EXCEL_FILE} باز است.")
             return
+        
         rows = list(ws.iter_rows(min_row=2, values_only=True))
         found_rows = [r for r in rows if str(r[2]) == str(order_no)]
+
         if not found_rows:
             QMessageBox.information(self, "یافت نشد", "سفارشی با این شماره پیدا نشد.")
             self.search_date.clear(); self.search_desc.clear(); self.table_search.setRowCount(0); self.serial_box_search.clear()
             return
+        
         first = found_rows[0]
         self.search_date.setText(first[1] if first[1] is not None else "")
         self.search_desc.setText(first[8] if first[8] is not None else "")
@@ -820,6 +950,7 @@ class App(QMainWindow):
     def save_changes_search(self):
         if not ensure_excel():
             return
+        
         order_no = normalize_farsi(self.search_order_no.text())
         date_text = normalize_farsi(self.search_date.text())
         desc = normalize_farsi(self.search_desc.text())
@@ -830,6 +961,8 @@ class App(QMainWindow):
         try:
             wb = load_workbook(EXCEL_FILE)
             ws = wb[SHEET_NAME]
+            username = getpass.getuser()
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         except PermissionError:
             QMessageBox.critical(self, "خطا", f"فایل {EXCEL_FILE} باز است. لطفا ببندید و دوباره تلاش کنید.")
             return
@@ -846,7 +979,9 @@ class App(QMainWindow):
                     "qty": row[5],
                     "item_idx": row[6],
                     "serial": row[7],
-                    "desc": row[8]
+                    "desc": row[8],
+                    "username": row[9],
+                    "now_str": row[10]
                 })
 
         maxA, maxB, max_rowid = compute_maxes(ws)
@@ -894,11 +1029,29 @@ class App(QMainWindow):
                         serial_lines.append('\u200E' + row_data["serial"])
                 else:
                     serial_lines.append('\u200E' + row_data["serial"])
+                # write audit columns (col 10 -> user, col 11 -> timestamp)
+                ws.cell(row=ws_idx, column=10, value=username)
+                ws.cell(row=ws_idx, column=11, value=now_str)
 
             else:
                 max_rowid += 1
                 item_idx, serial, maxA, maxB = next_item_and_serial(ws, date_text, ptype_new, maxA, maxB)
-                ws.append([max_rowid, date_text, order_no, ptype_new, code_new, qty_new, item_idx, serial, desc])
+                ws.append(
+                    [
+                        max_rowid,
+                        date_text,
+                        order_no,
+                        ptype_new,
+                        code_new,
+                        qty_new,
+                        item_idx,
+                        serial,
+                        desc,
+                        username,
+                        now_str,
+                    ]
+                )
+
                 serial_lines.append('\u200E' + serial)
 
     # آپدیت محدوده جدول
@@ -927,21 +1080,23 @@ class App(QMainWindow):
         finally:
             progress.close()
 
-    # ---------- ذخیر کپی کردن سریال ----------
+    # ---------- کپی کردن سریال در ثبت سفارش ----------
     def copy_serials(self):
             text = self.serial_box.toPlainText()
             if not text.strip():
                 QMessageBox.information(self, "هشدار", "هیچ سریالی برای کپی وجود ندارد.")
                 return
+            
             QApplication.clipboard().setText(text)
             QMessageBox.information(self, "کپی شد", "سریال‌ها به کلیپ‌بورد کپی شدند.")
 
-    # ---------- ذخیر کپی کردن سریال ----------
+    # ---------- ذخیر کپی کردن سریال در ویرایش ----------
     def copy_serials_search(self):
             text = self.serial_box_search.toPlainText()
             if not text.strip():
                 QMessageBox.information(self, "هشدار", "هیچ سریالی برای کپی وجود ندارد.")
                 return
+            
             QApplication.clipboard().setText(text)
             QMessageBox.information(self, "کپی شد", "سریال‌ها به کلیپ‌بورد کپی شدند.")
 
@@ -957,6 +1112,7 @@ class App(QMainWindow):
             "sheet_name": SHEET_NAME,
             "table_name": TABLE_NAME
         }
+
         ok = save_settings(settings)
         if ok:
             QMessageBox.information(self, "ذخیره شد", "تنظیمات با موفقیت ذخیره شد.")
