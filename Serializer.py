@@ -18,6 +18,7 @@ from datetime import datetime
 # Third-party library imports
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
+from cryptography.fernet import Fernet
 
 # PyQt5 imports
 from PyQt5.QtCore import Qt, pyqtSignal
@@ -28,14 +29,27 @@ from PyQt5.QtWidgets import (
     QApplication, QComboBox, QDialog, QFileDialog, QFormLayout, QGraphicsDropShadowEffect,
     QGroupBox, QHeaderView, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
     QProgressDialog, QMainWindow, QSizePolicy, QTabWidget, QTableWidget, QTableWidgetItem,
-    QTextEdit, QVBoxLayout, QWidget
+    QTextEdit, QVBoxLayout, QWidget, QListWidget, QInputDialog, QListWidgetItem
 )
 
+
 # ---------- تنظیمات ----------
-EXCEL_FILE = r"D:\MyWork\G.G.Fardan\order.xlsx"
+ADMIN_USER = "BenRabin"       # نام کاربری ادمین در ویندوز
+ADMIN_PASSWORD = "123.0"     # رمز مدیریت کاربران
+
+# کلید ثابت
+SECRET_KEY = b"SnZFJqzdj1xx6rxksdPL5P_-UKijvx4DRlR0a5-s1lQ="  
+cipher = Fernet(SECRET_KEY)
+
+EXCEL_FILE = r"\\fileserver\Mohandesi\سفارش ها\order.xlsx"
 SHEET_NAME = "order"
 TABLE_NAME = "ordertable"
-SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
+ALLOWED_USERS = []
+
+SETTINGS_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "settings.json"
+)
 
 HEADERS = [
     "ردیف",
@@ -57,12 +71,9 @@ PRODUCT_MAP = {
     "MU": "U",
     "نفراست": "ن",
     "فویلی": "ف",
-    "فویل": "ف",
-    "ترموسوییچ": "TS",
-    "ترموسوئیچ": "TS",
     "هیتر سیمی": "س",
     "لوله ای دیفراست": "د",
-    "لوله‌ای دیفراست": "د",
+    "ترموسوییچ": "TS",
     "ترموفیوز": "TF"
 }
 
@@ -71,6 +82,7 @@ GROUP_M = {
     "MR",
     "MU"
 }
+
 
     # ---------- بررسی محدوده جدول در اکسل ----------
 def update_excel_table_range(ws, table_name):
@@ -89,19 +101,25 @@ def update_excel_table_range(ws, table_name):
         table.ref = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{max_row}"
     except KeyError:
         QMessageBox.warning(
-            None, "هشدار", f"جدول '{table_name}' پیدا نشد. داده‌ها ذخیره شدند ولی جدول آپدیت نشد."
+            None,
+            "هشدار",
+            f"جدول '{table_name}' پیدا نشد. داده‌ها ذخیره شدند ولی جدول آپدیت نشد."
         )
+
 
 # ---------- بررسی فایل سفارش ----------
 def ensure_excel(show_message=True):
     if not os.path.exists(EXCEL_FILE):
         if show_message:
             QMessageBox.warning(
-                None, "هشدار", f"فایل اکسل یافت نشد:\n{EXCEL_FILE}\nلطفاً مسیر درست را در تنظیمات وارد کنید."
+                None,
+                "هشدار",
+                f"فایل اکسل یافت نشد:\n{EXCEL_FILE}\nلطفاً مسیر درست را در تنظیمات وارد کنید."
             )
         return False
     
     return True
+
 
 # ---------- نرمال‌سازی حروف فارسی (عربی -> فارسی و trim) ----------
 def normalize_farsi(text: str) -> str:
@@ -120,15 +138,19 @@ def normalize_farsi(text: str) -> str:
 
     return re.sub(r"\s+", " ", text).strip()
 
+
 # ---------- بارگذاری تنظیمات از settings.json ----------
 def load_settings():
     try:
         if os.path.exists(SETTINGS_FILE):
-            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            with open(SETTINGS_FILE, "rb") as f:
+                encrypted = f.read()
+                if not encrypted:
+                    return {}
+                raw = cipher.decrypt(encrypted)   # رمزگشایی
+                data = json.loads(raw.decode("utf-8"))
                 if isinstance(data, dict):
                     return data
-                
     except Exception as e:
         print("خطا در بارگزاری تنظیمات:", e)
 
@@ -137,13 +159,15 @@ def load_settings():
 # ---------- ذخیره دیکشنری در settings.json ----------
 def save_settings(data: dict):
     try:
-        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        raw = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+        encrypted = cipher.encrypt(raw)   # رمزنگاری
+        with open(SETTINGS_FILE, "wb") as f:
+            f.write(encrypted)
         return True
     except Exception as e:
         print("خطا در ذخیره تنظیمات:", e)
-
         return False
+
 
 # ---------- پیدا کردن بیشترین ها (برای ردیف آیتم و شماره ردیف) ----------
 def compute_maxes(ws):
@@ -173,6 +197,7 @@ def compute_maxes(ws):
                 max_groupB = item_idx
 
     return max_groupA, max_groupB, max_rowid
+
 
 # ---------- تابع ساخت سریال سفارش و ردیف آیتم بر اساس الگوریتم ----------
 def next_item_and_serial(ws, date_text, product_type, max_groupA, max_groupB):
@@ -208,6 +233,7 @@ def next_item_and_serial(ws, date_text, product_type, max_groupA, max_groupB):
 
     return item_idx, serial, max_groupA, max_groupB
 
+
 # ---------- حذف تمام ردیف‌های یک سفارش ----------
 def delete_order_rows(ws, order_no):
     to_delete = []
@@ -218,6 +244,7 @@ def delete_order_rows(ws, order_no):
 
     for r in reversed(to_delete):
         ws.delete_rows(r, 1)
+
 
 # ---------- استایل ----------
 APP_STYLESHEET = """
@@ -286,6 +313,7 @@ QTabWidget::pane {
 }
 """
 
+
 # ---------- Dialog افزودن/ویرایش محصول ----------
 class ProductDialog(QDialog):
     product_added = pyqtSignal(tuple)  # (ptype, code, qty)
@@ -311,7 +339,23 @@ class ProductDialog(QDialog):
         self.setLayout(form)
 
         self.cb_type = QComboBox()
-        self.cb_type.addItems(['', 'فویلی', 'هیتر سیمی', 'نفراست', 'لوله ای دیفراست', 'ترموفیوز', 'ترموسوییچ', 'MF', 'MR', 'MU'])
+
+        # لیست نوع محصول در پنجره افزودن محصولات
+        self.cb_type.addItems(
+            [
+            '',
+            'فویلی',
+            'هیتر سیمی',
+            'نفراست',
+            'لوله ای دیفراست',
+            'ترموفیوز',
+            'ترموسوییچ',
+            'لوله استیل قطر 7 (60میل)',
+            'MF',
+            'MR',
+            'MU'
+            ]
+        )
         self.cb_type.setEditable(True)
         self.cb_type.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         form.addRow("نوع محصول ", self.cb_type)
@@ -348,6 +392,7 @@ class ProductDialog(QDialog):
         btn_register.clicked.connect(self.on_register)
         btn_close.clicked.connect(self.reject)
 
+
     def on_register(self):
         ptype = normalize_farsi(self.cb_type.currentText())
         code = normalize_farsi(self.e_code.text())
@@ -357,7 +402,7 @@ class ProductDialog(QDialog):
             if qty <= 0:
                 raise ValueError
         except:
-            QMessageBox.critical(self, "خطا", "تعداد نامعتبر است. لطفاً عددی بزرگتر از صفر وارد کنید.")
+            QMessageBox.critical(self, "خطا", "تعداد نامعتبر است. لطفا عددی بزرگتر از صفر وارد کنید.")
             return
 
         if not ptype or not code:
@@ -373,16 +418,23 @@ class ProductDialog(QDialog):
         self.e_qty.setText("")
         self.cb_type.setFocus()
 
+
 # ---------- کلاس اصلی ----------
 class App(QMainWindow):
     def __init__(self):
         super().__init__()
         # --- load persisted settings BEFORE checking Excel file ---
         settings = load_settings()
-        global EXCEL_FILE, SHEET_NAME, TABLE_NAME
+
+        # make globals available and load persisted values
+        global EXCEL_FILE, SHEET_NAME, TABLE_NAME, ALLOWED_USERS
         EXCEL_FILE = settings.get("excel_file", EXCEL_FILE)
         SHEET_NAME = settings.get("sheet_name", SHEET_NAME)
         TABLE_NAME = settings.get("table_name", TABLE_NAME)
+
+        # load allowed users list from settings.json (may be absent)
+        ALLOWED_USERS = settings.get("allowed_users", ALLOWED_USERS)
+
         ensure_excel(show_message=True)
         self.setWindowTitle("تولید سریال سفارش - FardanApex")
         self.resize(900, 500)
@@ -431,6 +483,7 @@ class App(QMainWindow):
         self.build_tab_new()
         self.build_tab_search()
         self.build_tab_option()
+
 
     # ---------- پنجره سفارش جدید ----------
     def build_tab_new(self):
@@ -506,6 +559,7 @@ class App(QMainWindow):
         right_layout.addWidget(btn_copy)
         right_layout.addStretch()
 
+
     # ---------- پنجره جستجو ----------
     def build_tab_search(self):
         main_hbox = QHBoxLayout(); self.tab_search.setLayout(main_hbox)
@@ -568,108 +622,151 @@ class App(QMainWindow):
         right_layout.addWidget(btn_copy)
         right_layout.addStretch()
 
+
     # ---------- پنجره آپشن ----------
     def build_tab_option(self):
-        layout = QVBoxLayout()
-        self.tab_option.setLayout(layout)
+        # main vertical container for the tab
+        main_layout = QVBoxLayout()
+        self.tab_option.setLayout(main_layout)
 
-        group_settings = QGroupBox("تنظیمات")
-        group_settings.setMaximumHeight(900)
+        # horizontal main: left = users (narrow), right = settings (expandable)
+        h_main = QHBoxLayout()
+        main_layout.addLayout(h_main)
+
+        # ---------------- قاب مدیریت کاربران (سمت چپ، کوچک) ----------------
+        self.user_group = QGroupBox("کاربران مجاز")
+        self.user_group.setFixedWidth(280)
+        user_group_layout = QVBoxLayout()
+        user_group_layout.setAlignment(Qt.AlignTop)
+        self.user_group.setAlignment(Qt.AlignRight)
+        self.user_group.setLayout(user_group_layout)
+
+        # بالای قاب: دکمه افزودن (سمت چپ) و فیلد نام کاربر (سمت راست)
+        user_top_row = QHBoxLayout()
+        user_top_row.setAlignment(Qt.AlignTop)
+        btn_add_user = QPushButton("افزودن")
+        btn_add_user.setFixedWidth(80)
+        btn_add_user.clicked.connect(self.add_user)
+        self.user_input = QLineEdit()
+        self.user_input.setPlaceholderText("نام کاربری جدید...")
+        self.user_input.setFixedWidth(170)
+        # جای دکمه و فیلد عوض شد: دکمه اول، فیلد بعدی
+        user_top_row.addWidget(btn_add_user)
+        user_top_row.addSpacing(8)
+        user_top_row.addWidget(self.user_input)
+        user_top_row.addStretch()
+        user_group_layout.addLayout(user_top_row)
+
+        user_group_layout.addSpacing(6)
+
+        # لیست کاربران — راست‌به‌چپ محیط برنامه حفظ می‌شود ولی خود لیست چپ-به-راست خواهد بود
+        self.user_list = QListWidget()
+        self.user_list.setMinimumHeight(260)
+        self.user_list.setLayoutDirection(Qt.LeftToRight)
+        user_group_layout.addWidget(self.user_list)
+
+        # اضافه کردن قاب کاربران به ستون چپ، aligned top تا جمع بمونه
+        h_main.addWidget(self.user_group, 0, Qt.AlignTop)
+
+        # ---------------- قاب تنظیمات (سمت راست، بالا تراز) ----------------
+        group_settings = QGroupBox("تنظیمات اکسل")
         settings_layout = QVBoxLayout()
+        settings_layout.setAlignment(Qt.AlignTop)
+        group_settings.setAlignment(Qt.AlignRight)
         group_settings.setLayout(settings_layout)
 
-        # آدرس فایل اکسل
-        lbl_file = QLabel("     آدرس فایل اکسل")
+        # آدرس فایل اکسل (عنوان راست‌چین)
         lbl_file_layout = QHBoxLayout()
         lbl_file_layout.addStretch()
+        lbl_file = QLabel("آدرس فایل اکسل")
         lbl_file_layout.addWidget(lbl_file)
+        settings_layout.addLayout(lbl_file_layout)
 
+        # ردیف: دکمه انتخاب فایل (چپ) + فیلد مسیر (راست)
+        file_row = QHBoxLayout()
+        btn_browse = QPushButton("انتخاب فایل")
+        btn_browse.setFixedWidth(120)
+        btn_browse.clicked.connect(self.browse_excel_file)
         self.e_excel_path = QLineEdit(self)
         self.e_excel_path.setText(EXCEL_FILE)
-
-        btn_browse = QPushButton("انتخاب فایل")
-        btn_browse.clicked.connect(self.browse_excel_file)
-
-        row1 = QVBoxLayout()
-        row1.addLayout(lbl_file_layout)
-
-        file_row = QHBoxLayout()
         file_row.addWidget(btn_browse)
         file_row.addWidget(self.e_excel_path)
-        row1.addLayout(file_row)
+        settings_layout.addLayout(file_row)
 
-        settings_layout.addLayout(row1)
+        settings_layout.addSpacing(12)
 
-        # فاصله بین بخش‌ها
-        settings_layout.addSpacing(20)
-
+        # ردیف: نام برگه و نام جدول کنار هم (هر کدام با label بالای خودش)
+        row2 = QHBoxLayout()
         # نام برگه
-        lbl_sheet = QLabel("    نام برگه")
-        sheet_label_layout = QHBoxLayout()
-        sheet_label_layout.addStretch()
-        sheet_label_layout.addWidget(lbl_sheet)
-
+        sheet_v = QVBoxLayout()
+        sheet_label_row = QHBoxLayout()
+        sheet_label_row.addStretch()
+        sheet_label_row.addWidget(QLabel("نام برگه"))
+        sheet_v.addLayout(sheet_label_row)
         self.e_sheet_name = QLineEdit(self)
         self.e_sheet_name.setText(SHEET_NAME)
-
-        sheet_layout = QVBoxLayout()
-        sheet_layout.addLayout(sheet_label_layout)
-        sheet_layout.addWidget(self.e_sheet_name)
-
+        sheet_v.addWidget(self.e_sheet_name)
         # نام جدول
-        lbl_table = QLabel("    نام جدول")
-        table_label_layout = QHBoxLayout()
-        table_label_layout.addStretch()
-        table_label_layout.addWidget(lbl_table)
-
+        table_v = QVBoxLayout()
+        table_label_row = QHBoxLayout()
+        table_label_row.addStretch()
+        table_label_row.addWidget(QLabel("نام جدول"))
+        table_v.addLayout(table_label_row)
         self.e_table_name = QLineEdit(self)
         self.e_table_name.setText(TABLE_NAME)
+        table_v.addWidget(self.e_table_name)
 
-        table_layout = QVBoxLayout()
-        table_layout.addLayout(table_label_layout)
-        table_layout.addWidget(self.e_table_name)
-
-        # ترکیب دو بخش در یک ردیف
-        row2 = QHBoxLayout()
-        row2.addLayout(sheet_layout)
+        row2.addLayout(sheet_v)
         row2.addSpacing(20)
-        row2.addLayout(table_layout)
-
+        row2.addLayout(table_v)
         settings_layout.addLayout(row2)
 
-        # دکمه ذخیره
-        btn_layout = QHBoxLayout()
-        btn_save = QPushButton("ذخیره")
-        btn_save.clicked.connect(self.save_options)
-        btn_layout.addStretch()
-        btn_layout.addWidget(btn_save)
-        settings_layout.addLayout(btn_layout)
+        # اضافه کردن قاب تنظیمات به ستون راست و تراز بالا
+        h_main.addWidget(group_settings, 1, Qt.AlignTop)
 
-        layout.addWidget(group_settings, alignment=Qt.AlignTop)
-
-        # دکمه درباره برنامه
-        btn_about_layout = QHBoxLayout()
+        # ---------------- دکمه‌های پایین تب ----------------
+        bottom_row = QHBoxLayout()
+        
+        # دکمه درباره برنامه سمت چپ
         btn_about = QPushButton("درباره برنامه")
+        btn_about.setFixedWidth(120)
         btn_about.clicked.connect(self.show_about)
-        btn_about_layout.addWidget(btn_about, alignment=Qt.AlignLeft)
-        layout.addLayout(btn_about_layout)
+        bottom_row.addWidget(btn_about, 0, Qt.AlignLeft)
+        
+        bottom_row.addStretch()
+        
+        # دکمه ذخیره سمت راست
+        btn_save = QPushButton("ذخیره")
+        btn_save.setFixedWidth(120)
+        btn_save.clicked.connect(self.save_options)
+        bottom_row.addWidget(btn_save, 0, Qt.AlignRight)
+        
+        main_layout.addLayout(bottom_row)
+
+        # ---------- آماده‌سازی و populate اولیه لیست کاربران ----------
+        # ساختار نگهداری آیتم‌ها: username -> {"item", "widget", "button", "label"}
+        self.user_widgets = {}
+
+        # populate initial users from ALLOWED_USERS using add_user_item (که پایین اضافه میشه)
+        for u in ALLOWED_USERS:
+            try:
+                self.add_user_item(u)
+            except Exception:
+                pass
+
 
     # تابع انتخاب فایل
     def browse_excel_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "انتخاب فایل اکسل",
-            "",
-            "Excel Files (*.xlsx)"
-        )
+        file_path, _ = QFileDialog.getOpenFileName(self, "انتخاب فایل اکسل", "", "Excel Files (*.xlsx)")
         if file_path:
             self.e_excel_path.setText(file_path)
+
 
     # ---------- درباره برنامه ----------
     def show_about(self):
         dlg = QDialog(self)
         dlg.setWindowTitle("About")
-        dlg.setFixedSize(500, 400)
+        dlg.setFixedSize(500, 450)
 
         main_layout = QVBoxLayout(dlg)
         main_layout.setContentsMargins(20, 20, 20, 20)
@@ -677,31 +774,31 @@ class App(QMainWindow):
 
         intro_layout = QVBoxLayout()
         intro_layout.setSpacing(0)
-        intro_layout.setContentsMargins(5, 0, 0, 0)
+        intro_layout.setContentsMargins(0, 0, 0, 0)
         lbl_intro = QLabel(
             "<h3><b>Fardan Apex — Serializer</b></h3>"
             "<h4>Production Serial Generator Application</h4><br>"
             "This application is designed to generate production series after order confirmation by the engineering unit.<br><br>"
             "Version: 2.1.7 — © 2025 All Rights Reserved<br>"
             "Developed exclusively for:<br>"
-            "Garma Gostar Fardan Co.<br><br>"
+            "Garma Gostar Fardan Co."
         )
         lbl_intro.setWordWrap(True)
         lbl_intro.setAlignment(Qt.AlignLeft)
         intro_layout.addWidget(lbl_intro)
 
         logo = QLabel()
-        logo.setPixmap(QPixmap("FardanLogo.jpg").scaled(
-            119, 119, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        logo.setPixmap(QPixmap("fardanLogoEN.png").scaled(
+            225, 87, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         logo.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        logo.setContentsMargins(30, 0, 0, 0)
+        logo.setContentsMargins(25, 15, 0, 0)
         intro_layout.addWidget(logo)
 
         main_layout.addLayout(intro_layout)
 
         dev_layout = QVBoxLayout()
         dev_layout.setSpacing(0)
-        dev_layout.setContentsMargins(5, 0, 0, 15)
+        dev_layout.setContentsMargins(5, 0, 0, 5)
         font_id = QFontDatabase.addApplicationFont("BrittanySignature.ttf")
         if font_id != -1:
             font_family = QFontDatabase.applicationFontFamilies(font_id)[0]
@@ -710,7 +807,7 @@ class App(QMainWindow):
 
         lbl_dev = QLabel(
             f"<b>Design & Development:</b><br>"
-            f"<span style='font-family:\"{font_family}\"; font-size:20pt; color:#4169E1;'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Behnam Rabieyan</span><br>"
+            f"<span style='font-family:\"{font_family}\"; font-size:20pt; color:#4169E1;'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Behnam Rabieyan</span><br>"
             "website: behnamrabieyan.ir | E-mail: info@behnamrabieyan.ir"
         )
 
@@ -727,6 +824,7 @@ class App(QMainWindow):
     def add_product_new(self):
         dlg = ProductDialog(self)
 
+
         def add_row(data):
             row = self.table_new.rowCount()
             self.table_new.insertRow(row)
@@ -737,6 +835,7 @@ class App(QMainWindow):
         dlg.product_added.connect(add_row)
         dlg.exec_()  # مودال می‌ماند ولی بعد از ثبت بسته نمی‌شود
 
+
     def edit_product_new(self):
         row = self.table_new.currentRow()
         if row == -1:
@@ -746,6 +845,7 @@ class App(QMainWindow):
         preset = [self.table_new.item(row, i).text() if self.table_new.item(row, i) else "" for i in range(3)]
         dlg = ProductDialog(self, preset)
 
+
         def update_row(data):
             for col, val in enumerate(data):
                 self.table_new.setItem(row, col, QTableWidgetItem(str(val)))
@@ -753,8 +853,10 @@ class App(QMainWindow):
         dlg.product_added.connect(update_row)
         dlg.exec_()
 
+
     def add_product_search(self):
         dlg = ProductDialog(self)
+
 
         def add_row(data):
             row = self.table_search.rowCount()
@@ -766,6 +868,7 @@ class App(QMainWindow):
         dlg.product_added.connect(add_row)
         dlg.exec_()
 
+
     def edit_product_search(self):
         row = self.table_search.currentRow()
         if row == -1:
@@ -775,6 +878,7 @@ class App(QMainWindow):
         preset = [self.table_search.item(row, i).text() if self.table_search.item(row, i) else "" for i in range(3)]
         dlg = ProductDialog(self, preset)
 
+
         def update_row(data):
             for col, val in enumerate(data):
                 self.table_search.setItem(row, col, QTableWidgetItem(str(val)))
@@ -782,10 +886,12 @@ class App(QMainWindow):
         dlg.product_added.connect(update_row)
         dlg.exec_()
 
+
     def delete_selected(self, table):
         indexes = table.selectionModel().selectedRows()
         for idx in sorted([r.row() for r in indexes], reverse=True):
             table.removeRow(idx)
+
 
     # ---------- ذخیره سفارش جدید ----------
     def save_order_new(self):
@@ -865,6 +971,7 @@ class App(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "خطا", f"خطا در ذخیره‌سازی: {e}")
 
+
 # ---------- پروسه ذخیره سفارش جدید ----------
     def save_order_new_with_progress(self):
         progress = QProgressDialog("در حال ذخیره سفارش، لطفا صبر کنید...", "لغو", 0, 0, self)
@@ -879,8 +986,8 @@ class App(QMainWindow):
         finally:
             progress.close()
 
-    # ---------- دکمه ثبت سفارش جدید: پاکسازی فرم و پنل ----------
 
+    # ---------- دکمه ثبت سفارش جدید: پاکسازی فرم و پنل ----------
     def reset_new_order_form(self):
         if hasattr(self, "new_order_no"):
             self.new_order_no.clear()
@@ -892,6 +999,7 @@ class App(QMainWindow):
             self.table_new.setRowCount(0)
         if hasattr(self, "serial_box"):
             self.serial_box.clear()
+
 
     # ---------- جستجو سفارش ----------
     def search_order(self):
@@ -932,6 +1040,7 @@ class App(QMainWindow):
             serial_lines.append('\u200E' + serial)
         self.serial_box_search.setPlainText("\n".join(serial_lines))
 
+
     # ---------- پروسه جستجو سفارش ----------
     def search_order_with_progress(self):
         progress = QProgressDialog("در حال جستجوی سفارش، لطفا صبر کنید...", "لغو", 0, 0, self)
@@ -945,6 +1054,7 @@ class App(QMainWindow):
             self.search_order()
         finally:
             progress.close()
+
 
     # ---------- ذخیر تغییرات در تب جستجو ----------
     def save_changes_search(self):
@@ -970,7 +1080,8 @@ class App(QMainWindow):
         existing_rows = []
         for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
             if str(row[2]) == str(order_no):
-                existing_rows.append({
+                existing_rows.append(
+                    {
                     "ws_idx": idx,
                     "rowid": row[0],
                     "date": row[1],
@@ -982,7 +1093,8 @@ class App(QMainWindow):
                     "desc": row[8],
                     "username": row[9],
                     "now_str": row[10]
-                })
+                    }
+                )
 
         maxA, maxB, max_rowid = compute_maxes(ws)
         serial_lines = []
@@ -1038,17 +1150,17 @@ class App(QMainWindow):
                 item_idx, serial, maxA, maxB = next_item_and_serial(ws, date_text, ptype_new, maxA, maxB)
                 ws.append(
                     [
-                        max_rowid,
-                        date_text,
-                        order_no,
-                        ptype_new,
-                        code_new,
-                        qty_new,
-                        item_idx,
-                        serial,
-                        desc,
-                        username,
-                        now_str,
+                    max_rowid,
+                    date_text,
+                    order_no,
+                    ptype_new,
+                    code_new,
+                    qty_new,
+                    item_idx,
+                    serial,
+                    desc,
+                    username,
+                    now_str,
                     ]
                 )
 
@@ -1066,6 +1178,7 @@ class App(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "خطا", f"خطا در ذخیره‌سازی: {e}")
 
+
 # ---------- پروسه ذخیره تغییرات سفارش ----------
     def save_changes_search_with_progress(self):
         progress = QProgressDialog("در حال ذخیره تغییرات، لطفا صبر کنید...", "لغو", 0, 0, self)
@@ -1080,6 +1193,7 @@ class App(QMainWindow):
         finally:
             progress.close()
 
+
     # ---------- کپی کردن سریال در ثبت سفارش ----------
     def copy_serials(self):
             text = self.serial_box.toPlainText()
@@ -1089,6 +1203,7 @@ class App(QMainWindow):
             
             QApplication.clipboard().setText(text)
             QMessageBox.information(self, "کپی شد", "سریال‌ها به کلیپ‌بورد کپی شدند.")
+
 
     # ---------- ذخیر کپی کردن سریال در ویرایش ----------
     def copy_serials_search(self):
@@ -1100,24 +1215,175 @@ class App(QMainWindow):
             QApplication.clipboard().setText(text)
             QMessageBox.information(self, "کپی شد", "سریال‌ها به کلیپ‌بورد کپی شدند.")
 
+
+    # ---------- افزودن و حذف کاربر ----------
+    def ask_admin_password(self):
+        """Ask for admin password (admin password is hardcoded in code)."""
+        pwd, ok = QInputDialog.getText(
+            self,
+            "رمز مدیر",
+            "رمز عبور مدیر را وارد کنید:",
+            QLineEdit.Password
+        )
+
+        if not ok:
+            return False
+            
+        # ADMIN_PASSWORD is expected to be defined in code (hardcoded)
+        return pwd == ADMIN_PASSWORD
+
+
+    def add_user(self):
+        """Add user to UI list only (do not save to JSON here)."""
+        if not self.ask_admin_password():
+            QMessageBox.warning(self, "خطا", "رمز عبور نادرست یا عملیات لغو شد.")
+            return
+
+        new_user = normalize_farsi(self.user_input.text().strip())
+        if not new_user:
+            QMessageBox.information(self, "توجه", "نام کاربر خالی است.")
+            return
+
+        if new_user == ADMIN_USER:
+            QMessageBox.information(self, "توجه", "این حساب متعلق به ادمین است.")
+            return
+
+        if new_user in getattr(self, "user_widgets", {}):
+            QMessageBox.information(self, "توجه", "این کاربر قبلاً اضافه شده است.")
+            return
+
+        # اضافه کردن آیتم سفارشی
+        self.add_user_item(new_user)
+        self.user_input.clear()
+        QMessageBox.information(self, "انجام شد", f"کاربر '{new_user}' به لیست اضافه شد.")
+
+
+    def remove_user(self):
+        """Remove selected user from UI list only (asks admin password)."""
+        if not self.ask_admin_password():
+            QMessageBox.warning(self, "خطا", "رمز عبور نادرست یا عملیات لغو شد.")
+            return
+
+        item = self.user_list.currentItem()
+        if not item:
+            QMessageBox.information(self, "توجه", "ابتدا یک کاربر را انتخاب کنید.")
+            return
+
+        username = item.data(Qt.UserRole)
+        if username == ADMIN_USER:
+            QMessageBox.warning(self, "خطا", "نمی‌توان ادمین را حذف کرد.")
+            return
+
+        row = self.user_list.row(item)
+        self.user_list.takeItem(row)
+        if username in getattr(self, "user_widgets", {}):
+            del self.user_widgets[username]
+
+        QMessageBox.information(self, "انجام شد", f"کاربر '{username}' از لیست حذف شد.")
+
+
+    # ---------- ذخیر تنظیمات ----------
+    def add_user_item(self, username):
+        """
+        یک آیتم سفارشی به QListWidget اضافه می‌کند که شامل دکمه حذف (✘) و نام کاربر است.
+        دکمه حذف همیشه فضای خودش را رزرو می‌کند ولی پیش‌فرض غیرفعال/نامرئی است.
+        """
+        username = str(username)
+        if username in getattr(self, "user_widgets", {}):
+            return
+
+        item = QListWidgetItem()
+        item.setData(Qt.UserRole, username)
+
+        widget = QWidget()
+        hl = QHBoxLayout()
+        hl.setContentsMargins(6, 4, 6, 4)
+
+        # دکمه حذف (فقط فضای خودش را اشغال می‌کند، پیش‌فرض غیرقابل کلیک و شفاف)
+        btn_del = QPushButton("✘")
+        btn_del.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: red;
+                border: none;
+                font-weight: bold;
+                padding-top: 4px;
+                padding-bottom: 4px;
+            }
+        """)
+        btn_del.clicked.connect(lambda _, u=username: self.on_delete_button_clicked(u))
+
+        lbl = QLabel(username)
+        lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+        # ترتیب: دکمه (چپ) - لیبل - فاصله
+        hl.addWidget(btn_del)
+        hl.addSpacing(6)
+        hl.addWidget(lbl)
+        hl.addStretch()
+        widget.setLayout(hl)
+
+        item.setSizeHint(widget.sizeHint())
+        self.user_list.addItem(item)
+        self.user_list.setItemWidget(item, widget)
+
+        if not hasattr(self, "user_widgets"):
+            self.user_widgets = {}
+        self.user_widgets[username] = {"item": item, "widget": widget, "button": btn_del, "label": lbl}
+
+
+    # ---------- کلید حذف کاربران ----------
+    def on_delete_button_clicked(self, username):
+        """
+        وقتی دکمهٔ ✘ کنار نام کلیک شد: رمز مدیر خواسته میشه و پس از معتبر بودن، کاربر حذف می‌شود.
+        """
+        if not self.ask_admin_password():
+            QMessageBox.warning(self, "خطا", "رمز عبور نادرست یا عملیات لغو شد.")
+            return
+
+        entry = self.user_widgets.get(username)
+        if not entry:
+            QMessageBox.information(self, "توجه", "کاربر مورد نظر پیدا نشد.")
+            return
+
+        item = entry["item"]
+        row = self.user_list.row(item)
+        self.user_list.takeItem(row)
+        try:
+            del self.user_widgets[username]
+        except KeyError:
+            pass
+
+        QMessageBox.information(self, "انجام شد", f"کاربر '{username}' حذف شد.")
+
+
     # ---------- ذخیر تنظیمات ----------
     def save_options(self):
-        global EXCEL_FILE, SHEET_NAME, TABLE_NAME
+        global EXCEL_FILE, SHEET_NAME, TABLE_NAME, ALLOWED_USERS
+
         EXCEL_FILE = self.e_excel_path.text().strip() or EXCEL_FILE
         SHEET_NAME = self.e_sheet_name.text().strip() or SHEET_NAME
         TABLE_NAME = self.e_table_name.text().strip() or TABLE_NAME
 
+        # collect users from UI (custom widgets)
+        if hasattr(self, "user_widgets"):
+            ALLOWED_USERS = list(self.user_widgets.keys())
+        else:
+            ALLOWED_USERS = [self.user_list.item(i).text() for i in range(self.user_list.count())]
+
         settings = {
             "excel_file": EXCEL_FILE,
             "sheet_name": SHEET_NAME,
-            "table_name": TABLE_NAME
+            "table_name": TABLE_NAME,
+            "allowed_users": ALLOWED_USERS,
         }
 
         ok = save_settings(settings)
         if ok:
             QMessageBox.information(self, "ذخیره شد", "تنظیمات با موفقیت ذخیره شد.")
         else:
-            QMessageBox.warning(self, "خطا", "خطا در ذخیره تنظیمات (بررسی دسترسی نوشتن).")
+            QMessageBox.warning(self, "خطا", "خطا در ذخیره تنظیمات (لطفاً دسترسی نوشتن را بررسی کنید).")
+
 
 # ---------- اجرای برنامه ----------
 if __name__ == "__main__":
