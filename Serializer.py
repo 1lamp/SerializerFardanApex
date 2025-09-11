@@ -21,7 +21,7 @@ from openpyxl.utils import get_column_letter
 from cryptography.fernet import Fernet
 
 # PyQt5 imports
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import (
     QColor, QFont, QFontDatabase, QIcon, QIntValidator, QPixmap, QTextOption
 )
@@ -29,8 +29,10 @@ from PyQt5.QtWidgets import (
     QApplication, QComboBox, QDialog, QFileDialog, QFormLayout, QGraphicsDropShadowEffect,
     QGroupBox, QHeaderView, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
     QProgressDialog, QMainWindow, QSizePolicy, QTabWidget, QTableWidget, QTableWidgetItem,
-    QTextEdit, QVBoxLayout, QWidget, QListWidget, QInputDialog, QListWidgetItem
+    QTextEdit, QVBoxLayout, QWidget, QListWidget, QInputDialog, QListWidgetItem,
+    QSplashScreen, QProgressBar
 )
+
 
 
 # ---------- تنظیمات ----------
@@ -46,10 +48,34 @@ SHEET_NAME = "order"
 TABLE_NAME = "ordertable"
 ALLOWED_USERS = []
 
-SETTINGS_FILE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "settings.json"
-)
+
+# ------------------ Helpers for resource paths ------------------
+def resource_path(relative_path: str) -> str:
+    """
+    Return absolute path to resource, works for dev and for PyInstaller onefile.
+    Use this for images, fonts, icons that are bundled with --add-data.
+    """
+    try:
+        base_path = sys._MEIPASS  # PyInstaller extracted temp dir
+    except Exception:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
+
+
+def app_dir_path(relative_path: str) -> str:
+    """
+    Return path next to the executable (where settings should live).
+    Use this for writable files (settings.json) so the program reads/writes next to exe.
+    """
+    if getattr(sys, "frozen", False):
+        base = os.path.dirname(sys.executable)
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base, relative_path)
+
+
+SETTINGS_FILE = app_dir_path("settings.json")
+
 
 HEADERS = [
     "ردیف",
@@ -419,28 +445,72 @@ class ProductDialog(QDialog):
         self.cb_type.setFocus()
 
 
+# ---------- تابع Preloader ----------
+def show_splash():
+    app = QApplication(sys.argv)
+
+    # تصویر PNG برای Splash Screen
+    splash_pix = QPixmap(resource_path("SerializerFardanApex.png"))
+    splash = QSplashScreen(splash_pix, Qt.WindowStaysOnTopHint)
+    splash.setMask(splash_pix.mask())
+
+    # نوار پیشرفت زیر تصویر
+    progress = QProgressBar(splash)
+    progress.setGeometry(90, splash_pix.height() - 100, splash_pix.width() - 180, 20)
+    progress.setMaximum(100)
+    progress.setValue(0)
+    progress.setStyleSheet("""
+        QProgressBar {
+            border: 1px solid grey;
+            border-radius: 5px;
+            text-align: center;
+        }
+        QProgressBar::chunk {
+            background-color: #2e7dff;
+            width: 1px;
+        }
+    """)
+
+    splash.show()
+
+    window = App()
+
+    counter = 0
+    def update_progress():
+        nonlocal counter
+        counter += 1
+        progress.setValue(counter)
+        if counter >= 100:
+            timer.stop()
+            splash.close()
+            window.show()
+
+    timer = QTimer()
+    timer.timeout.connect(update_progress)
+    timer.start(30)
+
+    sys.exit(app.exec_())
+
+
 # ---------- کلاس اصلی ----------
 class App(QMainWindow):
     def __init__(self):
         super().__init__()
-        # --- load persisted settings BEFORE checking Excel file ---
+
         settings = load_settings()
 
-        # make globals available and load persisted values
         global EXCEL_FILE, SHEET_NAME, TABLE_NAME, ALLOWED_USERS
         EXCEL_FILE = settings.get("excel_file", EXCEL_FILE)
         SHEET_NAME = settings.get("sheet_name", SHEET_NAME)
         TABLE_NAME = settings.get("table_name", TABLE_NAME)
-
-        # load allowed users list from settings.json (may be absent)
         ALLOWED_USERS = settings.get("allowed_users", ALLOWED_USERS)
 
-        ensure_excel(show_message=True)
+        ensure_excel(show_message=False)
+        
         self.setWindowTitle("تولید سریال سفارش - FardanApex")
         self.resize(900, 500)
         self.setStyleSheet(APP_STYLESHEET)
 
-        # Drop shadow for main window (subtle on central container)
         central = QWidget(); self.setCentralWidget(central)
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(24); shadow.setXOffset(0); shadow.setYOffset(8); shadow.setColor(QColor(0,0,0,40))
@@ -783,15 +853,21 @@ class App(QMainWindow):
             "Developed exclusively for:<br>"
             "Garma Gostar Fardan Co."
         )
+
         lbl_intro.setWordWrap(True)
         lbl_intro.setAlignment(Qt.AlignLeft)
         intro_layout.addWidget(lbl_intro)
 
         logo = QLabel()
-        logo.setPixmap(QPixmap("fardanLogoEN.png").scaled(
-            225, 87, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        logo_pix = QPixmap(resource_path("FardanLogo.jpg"))
+        if logo_pix.isNull():
+            logo_pix = QPixmap(resource_path("FardanLogoEN.png"))
+        if not logo_pix.isNull():
+            logo.setPixmap(logo_pix.scaledToWidth(175, Qt.SmoothTransformation))
+        else:
+            logo.setText("Fardan Apex")
         logo.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        logo.setContentsMargins(25, 15, 0, 0)
+        logo.setContentsMargins(35, 10, 0, 0)
         intro_layout.addWidget(logo)
 
         main_layout.addLayout(intro_layout)
@@ -799,7 +875,7 @@ class App(QMainWindow):
         dev_layout = QVBoxLayout()
         dev_layout.setSpacing(0)
         dev_layout.setContentsMargins(5, 0, 0, 5)
-        font_id = QFontDatabase.addApplicationFont("BrittanySignature.ttf")
+        font_id = QFontDatabase.addApplicationFont(resource_path("BrittanySignature.ttf"))
         if font_id != -1:
             font_family = QFontDatabase.applicationFontFamilies(font_id)[0]
         else:
@@ -807,7 +883,7 @@ class App(QMainWindow):
 
         lbl_dev = QLabel(
             f"<b>Design & Development:</b><br>"
-            f"<span style='font-family:\"{font_family}\"; font-size:20pt; color:#4169E1;'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Behnam Rabieyan</span><br>"
+            f"<span style='font-family:\"{font_family}\"; font-size:20pt; color:#4169E1;'>&nbsp;&nbsp;&nbsp;&nbsp;Behnam Rabieyan</span><br>"
             "website: behnamrabieyan.ir | E-mail: info@behnamrabieyan.ir"
         )
 
@@ -823,7 +899,6 @@ class App(QMainWindow):
     # ---------- مدیریت آیتم‌های محصول ----------
     def add_product_new(self):
         dlg = ProductDialog(self)
-
 
         def add_row(data):
             row = self.table_new.rowCount()
@@ -895,7 +970,7 @@ class App(QMainWindow):
 
     # ---------- ذخیره سفارش جدید ----------
     def save_order_new(self):
-        if not ensure_excel():
+        if not ensure_excel(show_message=True):
            return
         date_text = normalize_farsi(self.new_date.text())
         order_no = normalize_farsi(self.new_order_no.text())
@@ -1003,7 +1078,9 @@ class App(QMainWindow):
 
     # ---------- جستجو سفارش ----------
     def search_order(self):
-        ensure_excel()
+        if not ensure_excel(show_message=True):
+            return
+        
         order_no = normalize_farsi(self.search_order_no.text())
 
         if not order_no:
@@ -1058,7 +1135,7 @@ class App(QMainWindow):
 
     # ---------- ذخیر تغییرات در تب جستجو ----------
     def save_changes_search(self):
-        if not ensure_excel():
+        if not ensure_excel(show_message=True):
             return
         
         order_no = normalize_farsi(self.search_order_no.text())
@@ -1389,11 +1466,9 @@ class App(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     # اضافه کردن فونت IRAN
-    QFontDatabase.addApplicationFont("IRAN.ttf")
+    QFontDatabase.addApplicationFont(resource_path("IRAN.ttf"))
     app.setFont(QFont("IRAN", 10))
-
-# اضافه کردن آیکون
-    app.setWindowIcon(QIcon("icon.ico"))
-    window = App()
-    window.show()
-    sys.exit(app.exec_())
+    # اضافه کردن آیکون
+    app.setWindowIcon(QIcon(resource_path("icon.ico")))
+    
+    show_splash()
