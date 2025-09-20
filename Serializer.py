@@ -2,6 +2,7 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Fardan Apex --- Serializer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 This application is responsible for serializing order items in the Fardan Apex system.
 
+
 Author: Behnam Rabieyan
 Company: Garma Gostar Fardan
 Created: 2025
@@ -33,9 +34,9 @@ from PyQt5.QtWidgets import (
     QApplication, QComboBox, QDialog, QFileDialog, QFormLayout,
     QGraphicsDropShadowEffect, QGroupBox, QHeaderView, QHBoxLayout, QLabel,
     QLineEdit, QMessageBox, QPushButton, QProgressDialog, QMainWindow,
-    QSizePolicy, QTabWidget, QTableWidget, QTableWidgetItem, QTextEdit,
+    QProgressBar, QTabWidget, QTableWidget, QTableWidgetItem, QTextEdit,
     QVBoxLayout, QWidget, QListWidget, QInputDialog, QListWidgetItem,
-    QSplashScreen, QProgressBar
+    QSplashScreen
 )
 
 
@@ -51,18 +52,16 @@ SECRET_KEY = b"SnZFJqzdj1xx6rxksdPL5P_-UKijvx4DRlR0a5-s1lQ="
 cipher = Fernet(SECRET_KEY)
 
 
-EXCEL_FILE = r"\\fileserver\Mohandesi\سفارش ها\order.xlsx"
+EXCEL_FILE = r"\\fileserver\Mohandesi\سفارش ها\orders.xlsx"
 SHEET_NAME = "order"
 TABLE_NAME = "ordertable"
 ALLOWED_USERS = []
 
 
-
-
 # ------------------ Helpers for resource paths ------------------
 def resource_path(relative_path: str) -> str:
     """
-    Return absolute path to resource, works for dev and for PyInstaller.
+    مسیر‌های مطلق را برمیگرداند. برای PyInataller و dev کار میکند
     """
     try:
         base_path = sys._MEIPASS  # PyInstaller extracted temp dir
@@ -71,19 +70,15 @@ def resource_path(relative_path: str) -> str:
     return os.path.join(base_path, relative_path)
 
 
-
-
 def app_dir_path(relative_path: str) -> str:
     """
-    Return path next to the executable (where settings should live).
+    مسیر برگشتی فایل تنظیمات (جایی در کنار فایل اصلی)
     """
     if getattr(sys, "frozen", False):
         base = os.path.dirname(sys.executable)
     else:
         base = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base, relative_path)
-
-
 
 
 SETTINGS_FILE = app_dir_path("settings.json")
@@ -103,8 +98,6 @@ PRODUCT_MAP = {
 
 
 GROUP_M = {"MF", "MR", "MU"}
-
-
 
 
 # ---------- توابع کاربردی (Helpers) ----------
@@ -130,8 +123,6 @@ def update_excel_table_range(ws, table_name):
         )
 
 
-
-
 def ensure_excel(show_message=True):
     """بررسی وجود فایل اکسل سفارشات."""
     if not os.path.exists(EXCEL_FILE):
@@ -145,8 +136,6 @@ def ensure_excel(show_message=True):
     return True
 
 
-
-
 def normalize_farsi(text: str) -> str:
     """نرمال‌سازی حروف فارسی (عربی -> فارسی و trim)."""
     if not text:
@@ -155,8 +144,6 @@ def normalize_farsi(text: str) -> str:
     for src, dst in replacements.items():
         text = text.replace(src, dst)
     return re.sub(r"\s+", " ", text).strip()
-
-
 
 
 def load_settings():
@@ -176,8 +163,6 @@ def load_settings():
     return {}
 
 
-
-
 def save_settings(data: dict):
     """ذخیره دیکشنری تنظیمات در فایل settings.json."""
     try:
@@ -189,8 +174,6 @@ def save_settings(data: dict):
     except Exception as e:
         print("خطا در ذخیره تنظیمات:", e)
         return False
-
-
 
 
 def compute_maxes(ws):
@@ -206,13 +189,11 @@ def compute_maxes(ws):
         if rowid > max_rowid:
             max_rowid = rowid
 
-
         ptype = normalize_farsi(row[3]) if row[3] is not None else ""
         try:
             item_idx = int(row[6]) if row[6] is not None else 0
         except (ValueError, TypeError):
             item_idx = 0
-
 
         if str(ptype).upper() in GROUP_M:
             if item_idx > max_groupA:
@@ -223,20 +204,16 @@ def compute_maxes(ws):
     return max_groupA, max_groupB, max_rowid
 
 
-
-
 def next_item_and_serial(ws, date_text, product_type, max_groupA, max_groupB):
     """ساخت سریال سفارش و ردیف آیتم بر اساس الگوریتم."""
     p = normalize_farsi(product_type)
     key = p.upper() if re.match(r"^[A-Za-z]{1,4}$", p) else p
     abbrev = PRODUCT_MAP.get(key, "0")
 
-
     yyyy = "0000"
     if date_text:
         m = re.search(r"\d{4}", date_text)
         yyyy = m.group(0) if m else date_text[:4]
-
 
     in_groupA = (str(key).upper() in GROUP_M)
     if in_groupA:
@@ -246,11 +223,8 @@ def next_item_and_serial(ws, date_text, product_type, max_groupA, max_groupB):
         max_groupB += 1
         item_idx = max_groupB
 
-
     serial = f"{item_idx}-{yyyy}-{abbrev}"
     return item_idx, serial, max_groupA, max_groupB
-
-
 
 
 def delete_order_rows(ws, order_no):
@@ -261,8 +235,6 @@ def delete_order_rows(ws, order_no):
     ]
     for r in reversed(to_delete):
         ws.delete_rows(r, 1)
-
-
 
 
 # ---------- استایل برنامه ----------
@@ -314,8 +286,6 @@ QTabWidget::pane { border: none; }
 """
 
 
-
-
 # ---------- Dialog افزودن/ویرایش محصول ----------
 class ProductDialog(QDialog):
     product_added = pyqtSignal(tuple)  # (ptype, code, qty)
@@ -326,7 +296,6 @@ class ProductDialog(QDialog):
         self.setWindowTitle("افزودن/ویرایش محصول")
         self.setFixedSize(460, 220)
 
-
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(18)
         shadow.setXOffset(0)
@@ -334,16 +303,13 @@ class ProductDialog(QDialog):
         shadow.setColor(QColor(0, 0, 0, 60))
         self.setGraphicsEffect(shadow)
 
-
         font = QFont()
         font.setPointSize(10)
         self.setFont(font)
 
-
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignRight)
         self.setLayout(form)
-
 
         self.cb_type = QComboBox()
         self.cb_type.addItems([
@@ -354,16 +320,13 @@ class ProductDialog(QDialog):
         self.cb_type.setEditable(True)
         form.addRow("نوع محصول ", self.cb_type)
 
-
         self.e_code = QLineEdit()
         self.e_code.setAlignment(Qt.AlignRight)
         form.addRow("کد محصول ", self.e_code)
 
-
         self.e_qty = QLineEdit()
         self.e_qty.setValidator(QIntValidator(1, 10000000, self))
         form.addRow("تعداد ", self.e_qty)
-
 
         if preset:
             self.cb_type.setCurrentText(preset[0])
@@ -371,7 +334,6 @@ class ProductDialog(QDialog):
             self.e_qty.setText(str(preset[2]))
         else:
             self.e_qty.setText("")
-
 
         btn_layout = QHBoxLayout()
         btn_register = QPushButton("ثبت")
@@ -384,7 +346,6 @@ class ProductDialog(QDialog):
         btn_layout.addWidget(btn_close)
         form.addRow(btn_layout)
 
-
         btn_register.clicked.connect(self.on_register)
         btn_close.clicked.connect(self.reject)
 
@@ -394,11 +355,9 @@ class ProductDialog(QDialog):
         code = normalize_farsi(self.e_code.text())
         qty_text = self.e_qty.text()
 
-
         if not ptype or not code or not qty_text:
             QMessageBox.critical(self, "خطا", "همه فیلدها الزامی هستند.")
             return
-
 
         try:
             qty = int(qty_text)
@@ -411,17 +370,12 @@ class ProductDialog(QDialog):
             )
             return
 
-
         self.product_added.emit((ptype, code, qty))
 
-
-        # Reset fields for next entry
         self.cb_type.setCurrentIndex(0)
         self.e_code.clear()
         self.e_qty.clear()
         self.cb_type.setFocus()
-
-
 
 
 # ---------- تابع Preloader ----------
@@ -430,8 +384,6 @@ def show_splash():
     splash_pix = QPixmap(resource_path("SerializerFardanApex.png"))
     splash = QSplashScreen(splash_pix, Qt.WindowStaysOnTopHint)
     splash.setMask(splash_pix.mask())
-
-
     progress = QProgressBar(splash)
     progress.setGeometry(
         90, splash_pix.height() - 100, splash_pix.width() - 180, 20
@@ -444,43 +396,33 @@ def show_splash():
     """)
     splash.show()
 
-
     main_window = App()
 
-
-    def update_progress(val):
-        progress.setValue(val)
-        if val >= 100:
+    counter = 0
+    def update_progress():
+        nonlocal counter
+        counter += 1
+        progress.setValue(counter)
+        if counter >= 100:
             timer.stop()
             splash.close()
             main_window.show()
 
-
     timer = QTimer()
-    # Simple animation logic
-    values = list(range(1, 101))
-    current_step = 0
+    timer.timeout.connect(update_progress)
+    timer.start(25)
+
+    sys.exit(app.exec_())
 
 
-    def next_step():
-        nonlocal current_step
-        if current_step < len(values):
-            update_progress(values[current_step])
-            current_step += 1
-
-
-    timer.timeout.connect(next_step)
-    timer.start(25)  # Update every 25ms
-
-
-    app.exec_()
-
-
-# ---------- Decorator for Progress Dialog ----------
+# ---------- نمایش پروسس بار برای پیش بارگذار ----------
 def with_progress_dialog(title, label):
-    """Decorator to show a progress dialog while a function is running."""
+    """
+    نمایش دکوری پیشرفت لود در حین اجرای برنامه
+    """
     def decorator(func):
         @wraps(func)
+
         def wrapper(self, *args, **kwargs):
             progress = QProgressDialog(label, "لغو", 0, 0, self)
             progress.setWindowTitle(title)
@@ -489,14 +431,11 @@ def with_progress_dialog(title, label):
             progress.show()
             QApplication.processEvents()
             try:
-                # The fix is here: Call the original function without extra args
                 return func(self)
             finally:
                 progress.close()
         return wrapper
     return decorator
-
-
 
 
 # ---------- کلاس اصلی ----------
@@ -511,11 +450,9 @@ class App(QMainWindow):
         ALLOWED_USERS = settings.get("allowed_users", ALLOWED_USERS)
         ensure_excel(show_message=False)
 
-
         self.setWindowTitle("تولید سریال سفارش - FardanApex")
         self.resize(900, 500)
         self.setStyleSheet(APP_STYLESHEET)
-
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -525,7 +462,6 @@ class App(QMainWindow):
         shadow.setYOffset(8)
         shadow.setColor(QColor(0, 0, 0, 40))
         central.setGraphicsEffect(shadow)
-
 
         main_layout = QVBoxLayout(central)
         self.tabs = QTabWidget()
@@ -540,14 +476,12 @@ class App(QMainWindow):
         """)
         main_layout.addWidget(self.tabs)
 
-
         self.tab_new = QWidget()
         self.tab_search = QWidget()
         self.tab_option = QWidget()
         self.tabs.addTab(self.tab_new, "ثبت سفارش جدید")
         self.tabs.addTab(self.tab_search, "جستجو و ویرایش")
         self.tabs.addTab(self.tab_option, "ویژگی‌ها")
-
 
         self.build_tab_new()
         self.build_tab_search()
@@ -570,7 +504,6 @@ class App(QMainWindow):
         top_layout.addWidget(QLabel("تاریخ "), 0, Qt.AlignRight)
         top_layout.addWidget(date)
 
-
         desc_layout = QHBoxLayout()
         description = QLineEdit()
         description.setAlignment(Qt.AlignRight)
@@ -579,7 +512,9 @@ class App(QMainWindow):
 
         if is_search_tab:
             table = QTableWidget(0, 4)
-            table.setHorizontalHeaderLabels(["حذف", "نوع محصول", "کد محصول", "تعداد"])
+            table.setHorizontalHeaderLabels(
+                ["حذف", "نوع محصول", "کد محصول", "تعداد"]
+            )
             header = table.horizontalHeader()
             header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
             header.setSectionResizeMode(1, QHeaderView.Stretch)
@@ -594,13 +529,11 @@ class App(QMainWindow):
 
         table.verticalHeader().setVisible(False)
 
-
         serial_box = QTextEdit()
         serial_box.setReadOnly(True)
         serial_box.setWordWrapMode(QTextOption.NoWrap)
         serial_box.setLayoutDirection(Qt.LeftToRight)
         serial_box.setFont(QFont("Consolas", 10))
-
 
         return {
             "top_layout": top_layout,
@@ -614,25 +547,28 @@ class App(QMainWindow):
 
 
     def _add_product_to_table(self, table: QTableWidget):
-        """Adds a new product to the specified table."""
+        """
+        یک محصول جدید به جدول اضافه می‌کند.
+        """
         dlg = ProductDialog(self)
+
 
         def add_row(data):
             row_count = table.rowCount()
             table.insertRow(row_count)
             
-            # If it's the search table, add a delete button
+            # اگر جدول جستجو و ویرایش است، یک دکمه حذف اضافه کنید
             if table.columnCount() == 4:
                 btn_del = QPushButton("×")
                 btn_del.setStyleSheet("color: red; font-weight: bold;")
                 btn_del.clicked.connect(self.toggle_row_for_deletion)
                 table.setCellWidget(row_count, 0, btn_del)
-                # Data starts from column 1
+                # داده‌های آیتم‌ها از ستون 1 شروع می‌شوند
                 table.setItem(row_count, 1, QTableWidgetItem(str(data[0])))
                 table.setItem(row_count, 2, QTableWidgetItem(str(data[1])))
                 table.setItem(row_count, 3, QTableWidgetItem(str(data[2])))
             else:
-                 # Data starts from column 0
+                 # داده‌ها از ستون 0 شروع می‌شوند
                 table.setItem(row_count, 0, QTableWidgetItem(str(data[0])))
                 table.setItem(row_count, 1, QTableWidgetItem(str(data[1])))
                 table.setItem(row_count, 2, QTableWidgetItem(str(data[2])))
@@ -642,13 +578,15 @@ class App(QMainWindow):
 
 
     def _edit_product_in_table(self, table: QTableWidget):
-        """Edits the selected product in the specified table."""
+        """
+        محصول انتخاب شده را در جدول مشخص شده ویرایش می‌کند.
+        """
         row = table.currentRow()
         if row == -1:
             QMessageBox.warning(self, "توجه", "ابتدا یک محصول را انتخاب کنید.")
             return
         
-        # Adjust column indices for search table
+        # تنظیم شاخص‌های ستون برای جدول جستجو
         start_col = 1 if table.columnCount() == 4 else 0
         end_col = table.columnCount()
         
@@ -657,7 +595,7 @@ class App(QMainWindow):
             item = table.item(row, i)
             preset_data.append(item.text() if item else "")
 
-        # The preset for ProductDialog expects (type, code, qty)
+        # تنظیمات پیشرفض برای ProductDialog (type, code, qty)
         dlg = ProductDialog(self, preset=preset_data)
 
 
@@ -670,7 +608,9 @@ class App(QMainWindow):
 
 
     def _copy_serials_to_clipboard(self, serial_box: QTextEdit):
-        """Copies content from a QTextEdit to the clipboard."""
+        """
+        کپی کردن سریال تولید از QTextEdit
+        """
         text = serial_box.toPlainText()
         if not text.strip():
             QMessageBox.information(self, "هشدار", "هیچ سریالی برای کپی وجود ندارد.")
@@ -681,13 +621,14 @@ class App(QMainWindow):
 
     # ---------- ساخت تب‌ها ----------
     def build_tab_new(self):
-        """Builds the 'New Order' tab."""
+        """
+        تب سفارش جدید
+        """
         main_hbox = QHBoxLayout()
         self.tab_new.setLayout(main_hbox)
         left_layout, right_layout = QVBoxLayout(), QVBoxLayout()
         main_hbox.addLayout(left_layout, 3)
         main_hbox.addLayout(right_layout, 1)
-
 
         widgets = self._create_order_tab_widgets()
         self.new_order_no = widgets["order_no"]
@@ -696,18 +637,15 @@ class App(QMainWindow):
         self.table_new = widgets["table"]
         self.serial_box = widgets["serial_box"]
 
-
         btn_new_top = QPushButton("ثبت سفارش جدید")
         btn_new_top.setObjectName("secondary")
         btn_new_top.clicked.connect(self.reset_new_order_form)
         widgets["top_layout"].addWidget(btn_new_top)
         widgets["top_layout"].addStretch()
 
-
         left_layout.addLayout(widgets["top_layout"])
         left_layout.addLayout(widgets["desc_layout"])
         left_layout.addWidget(self.table_new)
-
 
         btn_layout = QHBoxLayout()
         btn_add = QPushButton("افزودن محصول")
@@ -725,7 +663,6 @@ class App(QMainWindow):
         btn_layout.addWidget(btn_save)
         left_layout.addLayout(btn_layout)
 
-
         right_layout.addWidget(QLabel("سریال‌های این سفارش:"))
         right_layout.addWidget(self.serial_box)
         btn_copy = QPushButton("کپی سریال‌ها")
@@ -735,13 +672,14 @@ class App(QMainWindow):
 
 
     def build_tab_search(self):
-        """Builds the 'Search and Edit' tab."""
+        """
+        تب جستجو و ویرایش 
+        """
         main_hbox = QHBoxLayout()
         self.tab_search.setLayout(main_hbox)
         left_layout, right_layout = QVBoxLayout(), QVBoxLayout()
         main_hbox.addLayout(left_layout, 3)
         main_hbox.addLayout(right_layout, 1)
-
 
         widgets = self._create_order_tab_widgets(is_search_tab=True)
         self.search_order_no = widgets["order_no"]
@@ -750,17 +688,14 @@ class App(QMainWindow):
         self.table_search = widgets["table"]
         self.serial_box_search = widgets["serial_box"]
 
-
         btn_search = QPushButton("جستجو")
         btn_search.clicked.connect(self.search_order)
         widgets["top_layout"].insertWidget(2, btn_search)
         widgets["top_layout"].addStretch()
 
-
         left_layout.addLayout(widgets["top_layout"])
         left_layout.addLayout(widgets["desc_layout"])
         left_layout.addWidget(self.table_search)
-
 
         btn_layout = QHBoxLayout()
         btn_add = QPushButton("افزودن محصول")
@@ -774,7 +709,6 @@ class App(QMainWindow):
         btn_layout.addStretch()
         btn_layout.addWidget(btn_save)
         left_layout.addLayout(btn_layout)
-
 
         right_layout.addWidget(QLabel("سریال‌های این سفارش:"))
         right_layout.addWidget(self.serial_box_search)
@@ -791,13 +725,11 @@ class App(QMainWindow):
         h_main = QHBoxLayout()
         main_layout.addLayout(h_main)
 
-
-        # User management panel
+        # پنل مدیریت کاربران
         self.user_group = QGroupBox("کاربران مجاز")
         self.user_group.setFixedWidth(280)
         user_group_layout = QVBoxLayout(self.user_group)
         h_main.addWidget(self.user_group, 0, Qt.AlignTop)
-
 
         user_top_row = QHBoxLayout()
         btn_add_user = QPushButton("افزودن")
@@ -808,23 +740,19 @@ class App(QMainWindow):
         user_top_row.addWidget(btn_add_user)
         user_group_layout.addLayout(user_top_row)
 
-
         self.user_list = QListWidget()
         self.user_list.setLayoutDirection(Qt.LeftToRight)
         user_group_layout.addWidget(self.user_list)
-
 
         btn_remove_user = QPushButton("حذف کاربر انتخاب شده")
         btn_remove_user.setObjectName("secondary")
         btn_remove_user.clicked.connect(self.remove_selected_user)
         user_group_layout.addWidget(btn_remove_user)
 
-
-        # Excel settings panel
+        # پنل تنظیمات اکسل
         group_settings = QGroupBox("تنظیمات اکسل")
         settings_layout = QFormLayout(group_settings)
         h_main.addWidget(group_settings, 1, Qt.AlignTop)
-
 
         file_row = QHBoxLayout()
         btn_browse = QPushButton("انتخاب فایل")
@@ -835,12 +763,10 @@ class App(QMainWindow):
         file_row.addWidget(btn_browse)
         settings_layout.addRow("آدرس فایل اکسل:", file_row)
 
-
         self.e_sheet_name = QLineEdit(SHEET_NAME)
         settings_layout.addRow("نام برگه:", self.e_sheet_name)
         self.e_table_name = QLineEdit(TABLE_NAME)
         settings_layout.addRow("نام جدول:", self.e_table_name)
-
 
         bottom_row = QHBoxLayout()
         btn_about = QPushButton("درباره برنامه")
@@ -852,8 +778,7 @@ class App(QMainWindow):
         bottom_row.addWidget(btn_save)
         main_layout.addLayout(bottom_row)
 
-
-        # Initialize user list
+        # مقدار دهی لیست کاربران
         for u in ALLOWED_USERS:
             self.add_user_item(u)
 
@@ -864,13 +789,11 @@ class App(QMainWindow):
         if not ensure_excel():
             return
 
-
         date_text = normalize_farsi(self.new_date.text())
         order_no = normalize_farsi(self.new_order_no.text())
         if not date_text or not order_no:
             QMessageBox.critical(self, "خطا", "تاریخ و شماره سفارش الزامی هستند.")
             return
-
 
         items = []
         for row in range(self.table_new.rowCount()):
@@ -885,11 +808,9 @@ class App(QMainWindow):
                 QMessageBox.critical(self, "خطا", f"داده نامعتبر در ردیف {row + 1}")
                 return
 
-
         if not items:
             QMessageBox.critical(self, "خطا", "حداقل یک محصول باید اضافه شود.")
             return
-
 
         try:
             wb = load_workbook(EXCEL_FILE)
@@ -901,12 +822,10 @@ class App(QMainWindow):
             QMessageBox.critical(self, "خطا", f"خطا در باز کردن فایل: {e}")
             return
 
-
         maxA, maxB, max_rowid = compute_maxes(ws)
         serial_lines = []
         username = getpass.getuser()
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
 
         for ptype, code, qty in items:
             item_idx, serial, maxA, maxB = next_item_and_serial(
@@ -920,9 +839,7 @@ class App(QMainWindow):
             ])
             serial_lines.append('\u200E' + serial)
 
-
         update_excel_table_range(ws, TABLE_NAME)
-
 
         try:
             wb.save(EXCEL_FILE)
@@ -987,7 +904,9 @@ class App(QMainWindow):
     
     
     def toggle_row_for_deletion(self):
-        """Toggles the strikethrough state of a row based on the button clicked."""
+        """
+        حالت خط خورده‌ی یک ردیف را بر اساس دکمه‌ی کلیک شده تغییر می‌دهد.
+        """
         button = self.sender()
         if not button:
             return
@@ -1004,7 +923,7 @@ class App(QMainWindow):
             font.setStrikeOut(not is_struck_out)
             
             if not is_struck_out:
-                button.setText("⟲") # Undo symbol
+                button.setText("⟲")
                 button.setStyleSheet("color: green; font-weight: bold;")
             else:
                 button.setText("×")
@@ -1071,8 +990,6 @@ class App(QMainWindow):
             wb.save(EXCEL_FILE)
             self.serial_box_search.setPlainText("\n".join(serial_lines))
             
-            # --- FIX: Refresh the table view AFTER saving ---
-            # Iterate backwards to safely remove rows from the UI
             for row in reversed(range(self.table_search.rowCount())):
                 font = self.table_search.item(row, 1).font()
                 if font.strikeOut():
@@ -1127,14 +1044,14 @@ class App(QMainWindow):
 
     def ask_admin_password(self):
         pwd, ok = QInputDialog.getText(
-            self, "رمز مدیر", "رمز عبور مدیر را وارد کنید:", QLineEdit.Password
+            self, "رمز مدیریت کاربران", "رمز مدیر را وارد کنید:", QLineEdit.Password
         )
         return ok and pwd == ADMIN_PASSWORD
 
 
     def add_user(self):
         if not self.ask_admin_password():
-            QMessageBox.warning(self, "خطا", "رمز عبور نادرست است.")
+            QMessageBox.warning(self, "خطا", "رمز نادرست است.")
             return
         new_user = normalize_farsi(self.user_input.text())
         if not new_user:
@@ -1237,6 +1154,7 @@ if __name__ == "__main__":
     QFontDatabase.addApplicationFont(resource_path("IRAN.ttf"))
     app.setFont(QFont("IRAN", 10))
     app.setWindowIcon(QIcon(resource_path("icon.ico")))
+    
     show_splash()
 
 
